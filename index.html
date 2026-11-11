@@ -1,0 +1,3488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebXR Clinical Snellen &amp; Visual Acuity Chart</title>
+  <style>
+    :root {
+      --bg: #0c1017;
+      --panel: #151b26;
+      --panel-2: #1d2535;
+      --border: #2b364d;
+      --text: #eef2f9;
+      --muted: #9aa7bd;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    #app {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      height: 100vh;
+      width: 100vw;
+    }
+    @media (max-width: 900px) {
+      #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+        overflow-y: auto;
+      }
+    }
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.16);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      white-space: nowrap;
+    }
+    .xr-launch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      font-size: 0.83rem;
+      font-weight: 600;
+      padding: 9px 11px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.05s;
+      text-align: center;
+    }
+    .btn:hover:not(:disabled) {
+      background: #273248;
+      border-color: #3d4d6e;
+    }
+    .btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn-green {
+      background: #059669;
+      border-color: #10b981;
+      color: #fff;
+    }
+    .btn-green:hover:not(:disabled) {
+      background: #047857;
+    }
+    .btn.active {
+      background: rgba(59, 130, 246, 0.22);
+      border-color: #60a5fa;
+      color: #dbeafe;
+    }
+    .section {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .section-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    select, input[type="number"] {
+      width: 100%;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 7px 9px;
+      font-size: 0.83rem;
+    }
+    label.toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    label.toggle input {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+    }
+    .hint {
+      font-size: 0.75rem;
+      line-height: 1.42;
+      color: var(--muted);
+    }
+    .warn-box {
+      font-size: 0.74rem;
+      line-height: 1.42;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(245, 158, 11, 0.11);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #fde68a;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 0.76rem;
+    }
+    .metric-card {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 8px;
+    }
+    .metric-card .k { color: var(--muted); font-size: 0.68rem; }
+    .metric-card .v { font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .answer-box {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+      background: #0d121c;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+    .answer-row.current {
+      color: #60a5fa;
+      font-weight: 700;
+    }
+    .keypad-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 5px;
+    }
+    .keypad-grid.dirs-4 {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .keypad-btn {
+      font-size: 0.92rem;
+      font-weight: 700;
+      padding: 8px 4px;
+    }
+    .scorecard {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      font-size: 0.74rem;
+    }
+    .score-pill {
+      background: #0d121c;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 7px;
+      text-align: center;
+    }
+    .score-pill .eye-tag { color: var(--muted); font-size: 0.67rem; font-weight: 700; }
+    .score-pill .eye-val { color: #34d399; font-weight: 700; margin-top: 2px; font-size: 0.8rem; }
+    .exam-banner {
+      background: rgba(16, 185, 129, 0.13);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.79rem;
+      line-height: 1.45;
+    }
+    .voice-pill {
+      font-size: 0.73rem;
+      padding: 5px 8px;
+      border-radius: 6px;
+      background: #0d121c;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .voice-pill.listening {
+      border-color: #ef4444;
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.12);
+    }
+    main {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #090d14;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #glCanvas, #canvas2d {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #canvas2d {
+      display: none;
+      background: #e5e7eb;
+    }
+    .top-overlay {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      gap: 10px;
+    }
+    .pill {
+      pointer-events: auto;
+      background: rgba(15, 20, 30, 0.82);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.77rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #calibModal {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(21, 27, 38, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+      z-index: 20;
+      min-width: 340px;
+    }
+    #cardBar {
+      height: 54px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border: 2px solid #93c5fd;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <div class="brand">
+      <h1>WebXR Snellen Chart</h1>
+      <span class="badge" id="xrStatusBadge">Checking XR…</span>
+    </div>
+
+    <div class="xr-launch">
+      <button class="btn btn-primary" id="btnEnterVR" disabled>Enter VR</button>
+      <button class="btn" id="btnEnterAR" disabled>Enter AR</button>
+    </div>
+    <div id="secureWarning" class="warn-box" style="display:none;">
+      WebXR requires <code>https://</code> or <code>http://localhost</code>. Host on GitHub Pages or run <code>python3 -m http.server</code> for headset VR.
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>Viewport Mode</span>
+      </div>
+      <div class="grid-2">
+        <button class="btn active" id="btnView3D">3D / WebXR Room</button>
+        <button class="btn" id="btnView2D">2D Calibrated Screen</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>Chart &amp; Anti-Memorization</span>
+        <span id="cycleCounter" style="color:#60a5fa;">#1</span>
+      </div>
+      <select id="selChartType" aria-label="Chart Type">
+        <option value="snellen">Classic Snellen (20/200 – 20/10)</option>
+        <option value="etdrs">ETDRS / Sloan LogMAR (5 per row)</option>
+        <option value="tumbling_e">Tumbling E (4 Orientations)</option>
+        <option value="landolt_c">Landolt C — ISO 8596 Ring</option>
+        <option value="hotv">HOTV Symmetric Chart</option>
+        <option value="numbers">Numbers (Clinical 5×5 Digits)</option>
+      </select>
+
+      <div id="landoltDirsRow" style="display:none;" class="grid-2">
+        <button class="btn active" id="btnLandolt4">4 Directions (+)</button>
+        <button class="btn" id="btnLandolt8">8 Directions (ISO)</button>
+      </div>
+
+      <div class="grid-2">
+        <button class="btn btn-green" id="btnCycle" title="Shortcut: Space or R">↻ Cycle Chart</button>
+        <button class="btn" id="btnClassicPreset" title="Load historical 1862 Snellen letters">1862 Preset</button>
+      </div>
+
+      <div class="grid-3">
+        <button class="btn active" data-layout="full">Full Chart</button>
+        <button class="btn" data-layout="line">Single Line</button>
+        <button class="btn" data-layout="single">1 Optotype</button>
+      </div>
+
+      <div class="grid-2">
+        <button class="btn" id="btnRowUp">▲ Larger Row</button>
+        <button class="btn" id="btnRowDown">▼ Smaller Row</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>Optical Distance &amp; True Size</span>
+      </div>
+      <select id="selDistance" aria-label="Chart Distance">
+        <option value="6.096">20 ft (6.096 m) — Standard Snellen</option>
+        <option value="4.000">4.0 m (13.1 ft) — Clinical ETDRS</option>
+        <option value="2.000">2.0 m (6.6 ft) — VR Focal Match (2m)</option>
+        <option value="1.500" selected>1.5 m (4.9 ft) — VR Focal Match (1.5m)</option>
+        <option value="1.300">1.3 m (4.3 ft) — Quest 3 Focal Plane</option>
+      </select>
+
+      <label class="toggle" title="Continuously scales chart to your live eye-to-chart distance so 20/20 ALWAYS subtends 5.00 arcminutes even if you lean">
+        <span>Lock 5′ Angular Size (Lean-Proof)</span>
+        <input type="checkbox" id="chkLockAngle" checked />
+      </label>
+
+      <div class="grid-2">
+        <button class="btn" id="btnRecenter" title="Shortcut: C">Recenter Chart</button>
+        <button class="btn" id="btnCalib2D" style="display:none;">Calibrate Screen</button>
+        <button class="btn" id="btnEnvTheme">Room: Dim Clinic</button>
+      </div>
+
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="k">Active Row Acuity</div>
+          <div class="v" id="valAcuity">20/20 (6/6)</div>
+        </div>
+        <div class="metric-card">
+          <div class="k">20/20 Physical Height</div>
+          <div class="v" id="val2020Height">2.18 mm</div>
+        </div>
+        <div class="metric-card">
+          <div class="k">Live Eye Distance</div>
+          <div class="v" id="valLiveDist">1.50 m (4.9 ft)</div>
+        </div>
+        <div class="metric-card">
+          <div class="k">Angular Subtense</div>
+          <div class="v" id="valSubtense">5.00′ (Exact)</div>
+        </div>
+      </div>
+
+      <div class="warn-box" id="opticsNote">
+        <strong>VR Focal Plane Note:</strong> Fixed-focus HMD lenses (~1.3–2.0 m) set optical accommodation at ~0.5–0.75 D, and headset PPD (~25 PPD on Quest 3 ≈ 20/48 Nyquist) bounds the finest resolvable row. Placing the chart at 1.3–1.5 m eliminates vergence-accommodation conflict while preserving exact 5′ angular sizing.
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>Virtual Eye Occluder (VR Stereo)</span>
+      </div>
+      <div class="grid-3">
+        <button class="btn active" data-eye="OU">Both (OU)</button>
+        <button class="btn" data-eye="OD">Right (OD)</button>
+        <button class="btn" data-eye="OS">Left (OS)</button>
+      </div>
+      <div class="hint">In VR, OD/OS cleanly occludes the opposite eye lens with a neutral low-rivalry dark field so you don't need to reach inside the headset.</div>
+    </div>
+
+    <div class="section" id="examSection">
+      <div class="section-title">
+        <span>Scored Acuity Exam</span>
+        <span id="examPhaseBadge" style="color:#34d399;">Ready</span>
+      </div>
+
+      <div class="grid-2">
+        <button class="btn btn-primary" id="btnStartExam">▶ Start Exam</button>
+        <button class="btn" id="btnToggleVoice" title="Answer hands-free using microphone speech recognition">🎤 Voice: Off</button>
+      </div>
+
+      <div id="voiceStatusPill" class="voice-pill" style="display:none;">
+        Mic standby — speak letter or direction ("E", "Charlie", "Up", "Skip")
+      </div>
+
+      <div id="examActiveControls" style="display:none; flex-direction:column; gap:7px;">
+        <div class="hint" id="examPromptText" style="color:#e2e8f0; font-weight:600;"></div>
+        <div class="keypad-grid" id="examKeypadGrid"></div>
+        <div class="grid-2">
+          <button class="btn" id="btnExamSkip">? Can't Read (Skip)</button>
+          <button class="btn" id="btnCancelExam">✕ End Exam</button>
+        </div>
+      </div>
+
+      <div id="examResultBanner" class="exam-banner" style="display:none;"></div>
+
+      <div class="scorecard">
+        <div class="score-pill">
+          <div class="eye-tag">OD (Right)</div>
+          <div class="eye-val" id="scoreOD">—</div>
+        </div>
+        <div class="score-pill">
+          <div class="eye-tag">OS (Left)</div>
+          <div class="eye-val" id="scoreOS">—</div>
+        </div>
+        <div class="score-pill">
+          <div class="eye-tag">OU (Both)</div>
+          <div class="eye-val" id="scoreOU">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>Examiner Answer Key</span>
+        <label style="font-size:0.72rem; cursor:pointer; text-transform:none;">
+          <input type="checkbox" id="chkShowAnswers" checked /> Show
+        </label>
+      </div>
+      <div class="answer-box" id="answerKeyBox"></div>
+      <div class="hint">
+        <strong>Keys:</strong> <code>Space</code> Cycle • <code>↑/↓</code> Row • <code>1–6</code> Chart • <code>E</code> Eye • <code>C</code> Recenter<br/>
+        <strong>VR Controllers:</strong> Trigger/A = Cycle (or click 3D console) • Stick ↑/↓ = Row • Stick ←/→ = Chart • B/Y = Eye Occluder • Grip = Recenter
+      </div>
+    </div>
+  </aside>
+
+  <main id="viewportContainer">
+    <canvas id="glCanvas"></canvas>
+    <canvas id="canvas2d"></canvas>
+
+    <div class="top-overlay">
+      <div class="pill" id="viewportHintPill">
+        Drag to look • Scroll to move closer/further • Press <strong>Space</strong> to shuffle chart
+      </div>
+      <div class="pill" id="ppdBadge">
+        Vector 5×5 Optotypes • Native MSAA
+      </div>
+    </div>
+
+    <div id="calibModal">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <strong style="font-size:0.88rem;">2D Screen Physical Calibration</strong>
+        <button class="btn" id="btnCloseCalib" style="padding:4px 9px;">Done</button>
+      </div>
+      <div class="hint">Hold a standard credit/ID card (85.60 mm / 3.37 in wide) against the blue box and adjust until widths match:</div>
+      <div id="cardBar" style="width: 323px;">Standard Card Width (85.6 mm)</div>
+      <input type="range" id="rngPxPerMm" min="2.0" max="10.0" step="0.02" value="3.78" />
+      <div class="hint" id="lblCalibReadout">Scale: 3.78 CSS px/mm (96.0 DPI)</div>
+    </div>
+  </main>
+</div>
+
+<script id="snellen-engine">
+/**
+ * SnellenCore — Pure optometric math, ISO/Sloan 5x5 vector optotype geometry,
+ * and anti-memorization clinical chart generator.
+ */
+const SnellenCore = (() => {
+  const DEG_TO_RAD = Math.PI / 180;
+  const ARCMIN_TO_RAD = Math.PI / (60 * 180); // pi / 10800
+
+  // Exact optometric angular sizing
+  function marFromFootDenom(footDenom) {
+    return footDenom / 20;
+  }
+
+  function optotypeAngleRad(mar) {
+    return 5 * mar * ARCMIN_TO_RAD;
+  }
+
+  function optotypeHeightMeters(distanceMeters, mar) {
+    const theta = optotypeAngleRad(mar);
+    return 2 * distanceMeters * Math.tan(theta * 0.5);
+  }
+
+  function strokeWidthMeters(distanceMeters, mar) {
+    return optotypeHeightMeters(distanceMeters, mar) / 5;
+  }
+
+  function subtendedArcmin(heightMeters, distanceMeters) {
+    if (distanceMeters <= 0) return 0;
+    const theta = 2 * Math.atan(heightMeters / (2 * distanceMeters));
+    return theta / ARCMIN_TO_RAD;
+  }
+
+  // Estimate horizontal center PPD from WebXR projectionMatrix & viewport pixel width
+  function estimateHmdPPD(projectionMatrix, viewportWidth) {
+    if (!projectionMatrix || !projectionMatrix[0] || !viewportWidth) return null;
+    const halfFovRad = Math.atan(1 / Math.abs(projectionMatrix[0]));
+    const fullFovDeg = 2 * halfFovRad * (180 / Math.PI);
+    return viewportWidth / fullFovDeg;
+  }
+
+  // Nyquist acuity limit: 20/20 requires 1' stroke + 1' gap = 30 cycles/deg = 60 PPD
+  function nyquistSnellenDenom(ppd) {
+    if (!ppd || ppd <= 0) return null;
+    return Math.round((60 / ppd) * 20);
+  }
+
+  // Clinical Chart Row Specifications
+  const SNELLEN_ROWS = [
+    { label: '20/200', metric: '6/60',  denom: 200, mar: 10.0, count: 1 },
+    { label: '20/100', metric: '6/30',  denom: 100, mar: 5.0,  count: 2 },
+    { label: '20/70',  metric: '6/21',  denom: 70,  mar: 3.5,  count: 3 },
+    { label: '20/50',  metric: '6/15',  denom: 50,  mar: 2.5,  count: 4 },
+    { label: '20/40',  metric: '6/12',  denom: 40,  mar: 2.0,  count: 5 },
+    { label: '20/30',  metric: '6/9',   denom: 30,  mar: 1.5,  count: 6, barColor: [0.09, 0.58, 0.28] },
+    { label: '20/25',  metric: '6/7.5', denom: 25,  mar: 1.25, count: 7 },
+    { label: '20/20',  metric: '6/6',   denom: 20,  mar: 1.0,  count: 8, barColor: [0.82, 0.16, 0.16] },
+    { label: '20/15',  metric: '6/4.5', denom: 15,  mar: 0.75, count: 8 },
+    { label: '20/10',  metric: '6/3',   denom: 10,  mar: 0.5,  count: 8 }
+  ];
+
+  // Classic 1862 Herman Snellen iconic sequence
+  const CLASSIC_1862_SNELLEN = [
+    ['E'],
+    ['F', 'P'],
+    ['T', 'O', 'Z'],
+    ['L', 'P', 'E', 'D'],
+    ['P', 'E', 'C', 'F', 'D'],
+    ['E', 'D', 'F', 'C', 'Z', 'P'],
+    ['F', 'E', 'L', 'O', 'P', 'Z', 'D'],
+    ['D', 'E', 'F', 'P', 'O', 'T', 'E', 'C'],
+    ['L', 'E', 'F', 'O', 'D', 'P', 'C', 'T'],
+    ['F', 'D', 'P', 'L', 'T', 'C', 'E', 'O']
+  ];
+
+  const ETDRS_ROWS = [
+    { label: '20/200',  metric: '6/60',  logMAR:  1.0, denom: 200,  mar: Math.pow(10,  1.0), count: 5 },
+    { label: '20/160',  metric: '6/48',  logMAR:  0.9, denom: 160,  mar: Math.pow(10,  0.9), count: 5 },
+    { label: '20/125',  metric: '6/38',  logMAR:  0.8, denom: 125,  mar: Math.pow(10,  0.8), count: 5 },
+    { label: '20/100',  metric: '6/30',  logMAR:  0.7, denom: 100,  mar: Math.pow(10,  0.7), count: 5 },
+    { label: '20/80',   metric: '6/24',  logMAR:  0.6, denom: 80,   mar: Math.pow(10,  0.6), count: 5 },
+    { label: '20/63',   metric: '6/19',  logMAR:  0.5, denom: 63,   mar: Math.pow(10,  0.5), count: 5 },
+    { label: '20/50',   metric: '6/15',  logMAR:  0.4, denom: 50,   mar: Math.pow(10,  0.4), count: 5 },
+    { label: '20/40',   metric: '6/12',  logMAR:  0.3, denom: 40,   mar: Math.pow(10,  0.3), count: 5 },
+    { label: '20/32',   metric: '6/9.5', logMAR:  0.2, denom: 32,   mar: Math.pow(10,  0.2), count: 5 },
+    { label: '20/25',   metric: '6/7.5', logMAR:  0.1, denom: 25,   mar: Math.pow(10,  0.1), count: 5 },
+    { label: '20/20',   metric: '6/6',   logMAR:  0.0, denom: 20,   mar: Math.pow(10,  0.0), count: 5, barColor: [0.82, 0.16, 0.16] },
+    { label: '20/16',   metric: '6/4.8', logMAR: -0.1, denom: 16,   mar: Math.pow(10, -0.1), count: 5 },
+    { label: '20/12.5', metric: '6/3.8', logMAR: -0.2, denom: 12.5, mar: Math.pow(10, -0.2), count: 5 },
+    { label: '20/10',   metric: '6/3',   logMAR: -0.3, denom: 10,   mar: Math.pow(10, -0.3), count: 5 }
+  ];
+
+  const CHART_TYPES = {
+    snellen: {
+      id: 'snellen',
+      name: 'Classic Snellen',
+      rows: SNELLEN_ROWS,
+      pool: ['C', 'D', 'E', 'F', 'L', 'O', 'P', 'T', 'Z'],
+      kind: 'glyph'
+    },
+    etdrs: {
+      id: 'etdrs',
+      name: 'ETDRS (Sloan)',
+      rows: ETDRS_ROWS,
+      pool: ['C', 'D', 'H', 'K', 'N', 'O', 'R', 'S', 'V', 'Z'],
+      kind: 'glyph',
+      proportionalSpacing: true
+    },
+    tumbling_e: {
+      id: 'tumbling_e',
+      name: 'Tumbling E',
+      rows: SNELLEN_ROWS,
+      pool: [0, 90, 180, 270],
+      kind: 'tumbling_e'
+    },
+    landolt_c: {
+      id: 'landolt_c',
+      name: 'Landolt C',
+      rows: SNELLEN_ROWS,
+      pool4: [0, 90, 180, 270],
+      pool8: [0, 45, 90, 135, 180, 225, 270, 315],
+      kind: 'landolt_c'
+    },
+    hotv: {
+      id: 'hotv',
+      name: 'HOTV Chart',
+      rows: SNELLEN_ROWS,
+      pool: ['H', 'O', 'T', 'V'],
+      kind: 'glyph'
+    },
+    numbers: {
+      id: 'numbers',
+      name: 'Numbers',
+      rows: SNELLEN_ROWS,
+      pool: ['2', '3', '4', '5', '6', '8', '9'],
+      kind: 'glyph'
+    }
+  };
+
+  const DIR_ARROWS = {
+    0: '→',
+    45: '↗',
+    90: '↑',
+    135: '↖',
+    180: '←',
+    225: '↙',
+    270: '↓',
+    315: '↘'
+  };
+
+  /**
+   * Anti-memorization chart sequence generator.
+   * Guarantees:
+   * 1. Every slot differs from `prevChart` at the same [row][col] index.
+   * 2. No two adjacent items in the same row are identical.
+   * 3. Whenever pool.length >= row.count + 1, all items within a row are unique.
+   */
+  function generateChartData(chartTypeId, prevChart = null, options = {}) {
+    const spec = CHART_TYPES[chartTypeId] || CHART_TYPES.snellen;
+    const pool = chartTypeId === 'landolt_c'
+      ? (options.landolt8 ? spec.pool8 : spec.pool4)
+      : spec.pool;
+    const rng = options.rng || Math.random;
+
+    const rows = spec.rows.map((rowSpec, rIdx) => {
+      if (options.classicPreset && chartTypeId === 'snellen' && CLASSIC_1862_SNELLEN[rIdx]) {
+        const items = CLASSIC_1862_SNELLEN[rIdx].map(ch => ({
+          glyph: ch,
+          rotDeg: 0,
+          display: ch
+        }));
+        return { ...rowSpec, items };
+      }
+
+      const prevItems = prevChart && prevChart.rows[rIdx] ? prevChart.rows[rIdx].items : null;
+      const canAllUnique = pool.length > rowSpec.count;
+      const usedInRow = new Set();
+      const items = [];
+
+      for (let cIdx = 0; cIdx < rowSpec.count; cIdx++) {
+        const prevToken = prevItems && prevItems[cIdx] ? prevItems[cIdx].token : null;
+        const leftToken = cIdx > 0 ? items[cIdx - 1].token : null;
+
+        let candidates = pool.filter(tok => {
+          if (tok === prevToken) return false;
+          if (tok === leftToken) return false;
+          if (canAllUnique && usedInRow.has(tok)) return false;
+          return true;
+        });
+
+        // Relax row-wide uniqueness if constrained on last slot, while strictly keeping anti-prev & anti-adjacent
+        if (candidates.length === 0) {
+          candidates = pool.filter(tok => tok !== prevToken && tok !== leftToken);
+        }
+        if (candidates.length === 0) {
+          candidates = pool.filter(tok => tok !== prevToken);
+        }
+        if (candidates.length === 0) {
+          candidates = pool.slice();
+        }
+
+        const chosen = candidates[Math.floor(rng() * candidates.length)];
+        usedInRow.add(chosen);
+
+        if (spec.kind === 'tumbling_e') {
+          items.push({
+            token: chosen,
+            glyph: 'TUMBLING_E',
+            rotDeg: chosen,
+            display: DIR_ARROWS[chosen] || `${chosen}°`
+          });
+        } else if (spec.kind === 'landolt_c') {
+          items.push({
+            token: chosen,
+            glyph: 'LANDOLT_C',
+            rotDeg: chosen,
+            display: DIR_ARROWS[chosen] || `${chosen}°`
+          });
+        } else {
+          items.push({
+            token: chosen,
+            glyph: chosen,
+            rotDeg: 0,
+            display: chosen
+          });
+        }
+      }
+
+      return { ...rowSpec, items };
+    });
+
+    return {
+      chartTypeId: spec.id,
+      chartName: spec.name,
+      proportionalSpacing: !!spec.proportionalSpacing,
+      rows
+    };
+  }
+
+  // ============================================================================
+  // Exact 5x5 Clinical Vector Optotype Geometry Builder
+  // Coordinates live strictly in [0, 5] x [0, 5] (x right, y up; 1 unit = 1 stroke/gap)
+  // ============================================================================
+
+  function clipPolygonToBox(poly, minX, minY, maxX, maxY) {
+    function clipEdge(pts, insideFn, intersectFn) {
+      const out = [];
+      if (!pts.length) return out;
+      for (let i = 0; i < pts.length; i++) {
+        const cur = pts[i];
+        const prev = pts[(i + pts.length - 1) % pts.length];
+        const curIn = insideFn(cur);
+        const prevIn = insideFn(prev);
+        if (curIn) {
+          if (!prevIn) out.push(intersectFn(prev, cur));
+          out.push(cur);
+        } else if (prevIn) {
+          out.push(intersectFn(prev, cur));
+        }
+      }
+      return out;
+    }
+
+    let p = poly;
+    p = clipEdge(p, v => v[0] >= minX, (a, b) => [minX, a[1] + (b[1] - a[1]) * (minX - a[0]) / (b[0] - a[0])]);
+    p = clipEdge(p, v => v[0] <= maxX, (a, b) => [maxX, a[1] + (b[1] - a[1]) * (maxX - a[0]) / (b[0] - a[0])]);
+    p = clipEdge(p, v => v[1] >= minY, (a, b) => [a[0] + (b[0] - a[0]) * (minY - a[1]) / (b[1] - a[1]), minY]);
+    p = clipEdge(p, v => v[1] <= maxY, (a, b) => [a[0] + (b[0] - a[0]) * (maxY - a[1]) / (b[1] - a[1]), maxY]);
+    return p;
+  }
+
+  function buildGlyphGeometry(glyphId) {
+    const tris = []; // flat [x0,y0, x1,y1, x2,y2, ...]
+    const polys = []; // closed polygons for crisp 2D canvas rendering
+
+    function addConvexPoly(pts) {
+      if (pts.length < 3) return;
+      polys.push(pts);
+      for (let i = 1; i < pts.length - 1; i++) {
+        tris.push(
+          pts[0][0], pts[0][1],
+          pts[i][0], pts[i][1],
+          pts[i + 1][0], pts[i + 1][1]
+        );
+      }
+    }
+
+    function rect(x0, y0, x1, y1) {
+      addConvexPoly([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+    }
+
+    function thickSegmentClipped(x1, y1, x2, y2, width, bx0 = 0, by0 = 0, bx1 = 5, by1 = 5) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) return;
+      const nx = (-dy / len) * (width * 0.5);
+      const ny = (dx / len) * (width * 0.5);
+      const raw = [
+        [x1 - nx, y1 - ny],
+        [x2 - nx, y2 - ny],
+        [x2 + nx, y2 + ny],
+        [x1 + nx, y1 + ny]
+      ];
+      addConvexPoly(clipPolygonToBox(raw, bx0, by0, bx1, by1));
+    }
+
+    function annularArc(cx, cy, rIn, rOut, a0, a1, segs = 32) {
+      const outerPts = [];
+      const innerPts = [];
+      for (let i = 0; i <= segs; i++) {
+        const t = i / segs;
+        const a = a0 + t * (a1 - a0);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        const ox = Math.min(5, Math.max(0, cx + rOut * ca));
+        const oy = Math.min(5, Math.max(0, cy + rOut * sa));
+        const ix = Math.min(5, Math.max(0, cx + rIn * ca));
+        const iy = Math.min(5, Math.max(0, cy + rIn * sa));
+        outerPts.push([ox, oy]);
+        innerPts.push([ix, iy]);
+        if (i > 0) {
+          tris.push(
+            innerPts[i - 1][0], innerPts[i - 1][1],
+            outerPts[i - 1][0], outerPts[i - 1][1],
+            outerPts[i][0], outerPts[i][1],
+            innerPts[i - 1][0], innerPts[i - 1][1],
+            outerPts[i][0], outerPts[i][1],
+            innerPts[i][0], innerPts[i][1]
+          );
+        }
+      }
+      polys.push([...outerPts, ...innerPts.reverse()]);
+    }
+
+    // ISO 8596 exact Landolt Ring: outer R=2.5, inner R=1.5, parallel horizontal slot |y - 2.5| < 0.5 on +x
+    function landoltRing(segs = 64) {
+      const alphaIn = Math.asin(0.5 / 1.5);
+      const alphaOut = Math.asin(0.5 / 2.5);
+      const outerPts = [];
+      const innerPts = [];
+      for (let i = 0; i <= segs; i++) {
+        const t = i / segs;
+        const aIn = alphaIn + t * (2 * Math.PI - 2 * alphaIn);
+        const aOut = alphaOut + t * (2 * Math.PI - 2 * alphaOut);
+        const ox = 2.5 + 2.5 * Math.cos(aOut);
+        const oy = 2.5 + 2.5 * Math.sin(aOut);
+        const ix = 2.5 + 1.5 * Math.cos(aIn);
+        const iy = 2.5 + 1.5 * Math.sin(aIn);
+        outerPts.push([ox, oy]);
+        innerPts.push([ix, iy]);
+        if (i > 0) {
+          tris.push(
+            innerPts[i - 1][0], innerPts[i - 1][1],
+            outerPts[i - 1][0], outerPts[i - 1][1],
+            outerPts[i][0], outerPts[i][1],
+            innerPts[i - 1][0], innerPts[i - 1][1],
+            outerPts[i][0], outerPts[i][1],
+            innerPts[i][0], innerPts[i][1]
+          );
+        }
+      }
+      polys.push([...outerPts, ...innerPts.reverse()]);
+    }
+
+    switch (glyphId) {
+      case 'LANDOLT_C':
+      case 'C':
+        landoltRing(64);
+        break;
+
+      case 'O':
+        annularArc(2.5, 2.5, 1.5, 2.5, 0, Math.PI, 36);
+        annularArc(2.5, 2.5, 1.5, 2.5, Math.PI, Math.PI * 2, 36);
+        break;
+
+      case 'D':
+        rect(0, 0, 1, 5);
+        rect(0.5, 4, 2.55, 5);
+        rect(0.5, 0, 2.55, 1);
+        annularArc(2.5, 2.5, 1.5, 2.5, -Math.PI / 2, Math.PI / 2, 36);
+        break;
+
+      case 'TUMBLING_E':
+        rect(0, 0, 1, 5);
+        rect(0.5, 4, 5, 5);
+        rect(0.5, 2, 5, 3);
+        rect(0.5, 0, 5, 1);
+        break;
+
+      case 'E':
+        rect(0, 0, 1, 5);
+        rect(0.5, 4, 5, 5);
+        rect(0.5, 2, 4.6, 3);
+        rect(0.5, 0, 5, 1);
+        break;
+
+      case 'F':
+        rect(0, 0, 1, 5);
+        rect(0.5, 4, 5, 5);
+        rect(0.5, 2, 4.4, 3);
+        break;
+
+      case 'H':
+        rect(0, 0, 1, 5);
+        rect(4, 0, 5, 5);
+        rect(0.5, 2, 4.5, 3);
+        break;
+
+      case 'L':
+        rect(0, 0, 1, 5);
+        rect(0.5, 0, 5, 1);
+        break;
+
+      case 'T':
+        rect(0, 4, 5, 5);
+        rect(2, 0, 3, 4.5);
+        break;
+
+      case 'P':
+        rect(0, 0, 1, 5);
+        rect(0.5, 4, 3.55, 5);
+        rect(0.5, 2, 3.55, 3);
+        annularArc(3.5, 3.5, 0.5, 1.5, -Math.PI / 2, Math.PI / 2, 28);
+        break;
+
+      case 'R':
+        rect(0, 0, 1, 5);
+        rect(0.5, 4, 3.55, 5);
+        rect(0.5, 2, 3.55, 3);
+        annularArc(3.5, 3.5, 0.5, 1.5, -Math.PI / 2, Math.PI / 2, 28);
+        addConvexPoly([[2.1, 2.2], [3.35, 2.2], [5.0, 0.0], [3.75, 0.0]]);
+        break;
+
+      case 'K':
+        rect(0, 0, 1, 5);
+        thickSegmentClipped(0.5, 1.85, 5.0, 5.35, 1.0, 0.5, 0, 5, 5);
+        thickSegmentClipped(1.65, 3.05, 5.0, -0.3, 1.0, 0.5, 0, 5, 5);
+        break;
+
+      case 'N':
+        rect(0, 0, 1, 5);
+        rect(4, 0, 5, 5);
+        addConvexPoly([[0, 5], [1.25, 5], [5, 0], [3.75, 0]]);
+        break;
+
+      case 'V':
+        addConvexPoly([[0, 5], [1.077, 5], [2.52, 1.39], [2.52, 0], [2.0, 0]]);
+        addConvexPoly([[3.923, 5], [5, 5], [3.0, 0], [2.48, 0], [2.48, 1.39]]);
+        break;
+
+      case 'Z':
+        rect(0, 4, 5, 5);
+        rect(0, 0, 5, 1);
+        addConvexPoly([
+          [3.702, 4.2], [5.0, 4.2], [5.0, 4.0],
+          [1.5292, 1.0], [1.298, 0.8], [0.0, 0.8],
+          [0.0, 1.0], [3.4708, 4.0]
+        ]);
+        break;
+
+      case 'S':
+        rect(1.45, 4, 3.55, 5);
+        annularArc(3.5, 3.5, 0.5, 1.5, 0.08 * Math.PI, 0.52 * Math.PI, 16);
+        annularArc(1.5, 3.5, 0.5, 1.5, 0.48 * Math.PI, 1.52 * Math.PI, 28);
+        rect(1.45, 2, 3.55, 3);
+        annularArc(3.5, 1.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 28);
+        rect(1.45, 0, 3.55, 1);
+        annularArc(1.5, 1.5, 0.5, 1.5, 1.08 * Math.PI, 1.52 * Math.PI, 16);
+        break;
+
+      case '8':
+        rect(1.45, 4, 3.55, 5);
+        rect(1.45, 2, 3.55, 3);
+        rect(1.45, 0, 3.55, 1);
+        annularArc(1.5, 3.5, 0.5, 1.5, 0.48 * Math.PI, 1.52 * Math.PI, 24);
+        annularArc(3.5, 3.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        annularArc(1.5, 1.5, 0.5, 1.5, 0.48 * Math.PI, 1.52 * Math.PI, 24);
+        annularArc(3.5, 1.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        break;
+
+      case '6':
+        rect(1.45, 2, 3.55, 3);
+        rect(1.45, 0, 3.55, 1);
+        annularArc(1.5, 1.5, 0.5, 1.5, 0.48 * Math.PI, 1.52 * Math.PI, 24);
+        annularArc(3.5, 1.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        rect(0, 1.45, 1, 3.55);
+        annularArc(1.5, 3.5, 0.5, 1.5, 0.48 * Math.PI, 1.02 * Math.PI, 18);
+        rect(1.45, 4, 3.55, 5);
+        annularArc(3.5, 3.5, 0.5, 1.5, 0.12 * Math.PI, 0.52 * Math.PI, 14);
+        break;
+
+      case '9': {
+        const g6 = buildGlyphGeometry('6');
+        for (let i = 0; i < g6.tris.length; i += 2) {
+          tris.push(5 - g6.tris[i], 5 - g6.tris[i + 1]);
+        }
+        for (const poly of g6.polys) {
+          polys.push(poly.map(([x, y]) => [5 - x, 5 - y]));
+        }
+        break;
+      }
+
+      case '3':
+        rect(1.45, 4, 3.55, 5);
+        rect(1.6, 2, 3.55, 3);
+        rect(1.45, 0, 3.55, 1);
+        annularArc(3.5, 3.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        annularArc(3.5, 1.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        annularArc(1.5, 3.5, 0.5, 1.5, 0.48 * Math.PI, 0.90 * Math.PI, 14);
+        annularArc(1.5, 1.5, 0.5, 1.5, 1.10 * Math.PI, 1.52 * Math.PI, 14);
+        break;
+
+      case '5':
+        rect(0, 4, 5, 5);
+        rect(0, 2, 1, 4.5);
+        rect(0.5, 2, 3.55, 3);
+        annularArc(3.5, 1.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        rect(1.45, 0, 3.55, 1);
+        annularArc(1.5, 1.5, 0.5, 1.5, 1.08 * Math.PI, 1.52 * Math.PI, 14);
+        break;
+
+      case '2':
+        annularArc(1.5, 3.5, 0.5, 1.5, 0.48 * Math.PI, 0.92 * Math.PI, 14);
+        rect(1.45, 4, 3.55, 5);
+        annularArc(3.5, 3.5, 0.5, 1.5, -0.52 * Math.PI, 0.52 * Math.PI, 24);
+        rect(1.45, 2, 3.55, 3);
+        annularArc(1.5, 1.5, 0.5, 1.5, 0.48 * Math.PI, 1.02 * Math.PI, 16);
+        rect(0, 0, 1, 1.55);
+        rect(0, 0, 5, 1);
+        break;
+
+      case '4':
+        rect(0, 1.5, 1, 5);
+        rect(0, 1.5, 5, 2.5);
+        rect(3.3, 0, 4.3, 5);
+        break;
+
+      default:
+        rect(0, 0, 5, 5);
+    }
+
+    return {
+      glyphId,
+      tris: new Float32Array(tris),
+      polys
+    };
+  }
+
+  const GLYPH_CACHE = new Map();
+  function getGlyph(glyphId) {
+    if (!GLYPH_CACHE.has(glyphId)) {
+      GLYPH_CACHE.set(glyphId, buildGlyphGeometry(glyphId));
+    }
+    return GLYPH_CACHE.get(glyphId);
+  }
+
+  /**
+   * Computes exact physical meter layout of the chart at `distanceMeters`.
+   * Returns cabinet dimensions (meters), row vertical centers, and placed optotype instances.
+   */
+  function layoutChartPhysical(chartData, distanceMeters, layoutMode = 'full', activeRowIdx = 7, activeColIdx = 0) {
+    const clampedIdx = Math.max(0, Math.min(chartData.rows.length - 1, activeRowIdx));
+    const visibleRows = layoutMode === 'full'
+      ? chartData.rows.map((r, idx) => ({ row: r, originalIdx: idx }))
+      : [{ row: chartData.rows[clampedIdx], originalIdx: clampedIdx }];
+
+    const rowLayouts = [];
+    let cursorY = 0;
+    let maxRowWidth = 0;
+
+    for (let i = 0; i < visibleRows.length; i++) {
+      const { row, originalIdx } = visibleRows[i];
+      const h = optotypeHeightMeters(distanceMeters, row.mar);
+      const safeCol = Math.max(0, Math.min(row.items.length - 1, activeColIdx));
+      const itemsToPlace = layoutMode === 'single' ? [row.items[safeCol]] : row.items;
+      // Clinical spacing: 1.0x optotype width between letters (tightens slightly only on 8-letter rows to fit cabinet cleanly, min 0.85x)
+      const gapRatio = chartData.proportionalSpacing ? 1.0 : (itemsToPlace.length >= 7 ? 0.85 : 1.0);
+      const stepX = h * (1 + gapRatio);
+      const rowWidth = itemsToPlace.length * h + Math.max(0, itemsToPlace.length - 1) * (h * gapRatio);
+
+      if (i > 0) {
+        const prevH = rowLayouts[i - 1].height;
+        // Standard clinical vertical spacing: 1.0x height of current/adjacent row
+        const vGap = chartData.proportionalSpacing ? prevH * 0.9 : Math.max(h * 1.05, prevH * 0.55);
+        cursorY -= (prevH * 0.5 + vGap + h * 0.5);
+      }
+
+      maxRowWidth = Math.max(maxRowWidth, rowWidth);
+      rowLayouts.push({
+        originalIdx,
+        row,
+        height: h,
+        rowWidth,
+        stepX,
+        centerY: cursorY,
+        items: itemsToPlace
+      });
+    }
+
+    // Center chart vertically around midpoint (or around 20/20 / active row)
+    const topEdge = rowLayouts[0].centerY + rowLayouts[0].height * 0.5;
+    const botEdge = rowLayouts[rowLayouts.length - 1].centerY - rowLayouts[rowLayouts.length - 1].height * 0.5;
+    const midY = (topEdge + botEdge) * 0.5;
+    for (const rl of rowLayouts) {
+      rl.centerY -= midY;
+    }
+
+    const contentHeight = topEdge - botEdge;
+    const baseUnit = optotypeHeightMeters(distanceMeters, 10.0); // 20/200 letter height at distance D
+    const marginSide = Math.max(baseUnit * 1.35, 0.028 * (distanceMeters / 1.5));
+    const marginVert = Math.max(baseUnit * 0.65, 0.022 * (distanceMeters / 1.5));
+
+    const boardWidth = Math.max(maxRowWidth + marginSide * 2.4, baseUnit * 6.8);
+    const boardHeight = Math.max(contentHeight + marginVert * 2.0, baseUnit * 3.0);
+
+    const optotypes = [];
+    for (const rl of rowLayouts) {
+      const startX = -rl.rowWidth * 0.5 + rl.height * 0.5;
+      const singleCol = Math.max(0, Math.min(rl.row.items.length - 1, activeColIdx));
+      rl.items.forEach((item, idx) => {
+        optotypes.push({
+          glyph: item.glyph,
+          rotDeg: item.rotDeg || 0,
+          cx: startX + idx * rl.stepX,
+          cy: rl.centerY,
+          size: rl.height,
+          rowIdx: rl.originalIdx,
+          colIdx: layoutMode === 'single' ? singleCol : idx
+        });
+      });
+    }
+
+    return {
+      distanceMeters,
+      boardWidth,
+      boardHeight,
+      marginSide,
+      rowLayouts,
+      optotypes,
+      activeRowIdx: clampedIdx
+    };
+  }
+
+  // ============================================================================
+  // Multi-Modal Clinical Acuity Exam & Voice/Keypad Scoring Engine
+  // ============================================================================
+
+  function getExamChoices(chartTypeId, landolt8 = false) {
+    const spec = CHART_TYPES[chartTypeId] || CHART_TYPES.snellen;
+    if (spec.kind === 'tumbling_e' || (spec.kind === 'landolt_c' && !landolt8)) {
+      return [
+        { token: 90,  label: '↑ Up' },
+        { token: 270, label: '↓ Down' },
+        { token: 180, label: '← Left' },
+        { token: 0,   label: '→ Right' }
+      ];
+    }
+    if (spec.kind === 'landolt_c' && landolt8) {
+      return [
+        { token: 90,  label: '↑' },
+        { token: 45,  label: '↗' },
+        { token: 0,   label: '→' },
+        { token: 315, label: '↘' },
+        { token: 270, label: '↓' },
+        { token: 225, label: '↙' },
+        { token: 180, label: '←' },
+        { token: 135, label: '↖' }
+      ];
+    }
+    return spec.pool.map(ch => ({ token: ch, label: String(ch) }));
+  }
+
+  const SPOKEN_LETTER_MAP = {
+    c: 'C', see: 'C', sea: 'C', cee: 'C', charlie: 'C',
+    d: 'D', dee: 'D', delta: 'D',
+    e: 'E', ee: 'E', echo: 'E',
+    f: 'F', ef: 'F', eff: 'F', foxtrot: 'F',
+    h: 'H', aitch: 'H', hotel: 'H', age: 'H',
+    k: 'K', kay: 'K', kilo: 'K', okay: 'K',
+    l: 'L', el: 'L', ell: 'L', lima: 'L',
+    n: 'N', en: 'N', november: 'N', end: 'N',
+    o: 'O', oh: 'O', oscar: 'O', zero: 'O',
+    p: 'P', pee: 'P', pea: 'P', papa: 'P',
+    r: 'R', are: 'R', ar: 'R', romeo: 'R',
+    s: 'S', es: 'S', ess: 'S', sierra: 'S',
+    t: 'T', tee: 'T', tea: 'T', tango: 'T',
+    v: 'V', vee: 'V', victor: 'V',
+    z: 'Z', zee: 'Z', zed: 'Z', zulu: 'Z',
+    '2': '2', two: '2', to: '2', too: '2',
+    '3': '3', three: '3', tree: '3',
+    '4': '4', four: '4', for: '4', fore: '4',
+    '5': '5', five: '5',
+    '6': '6', six: '6',
+    '8': '8', eight: '8', ate: '8',
+    '9': '9', nine: '9', niner: '9'
+  };
+
+  const SPOKEN_DIR_MAP = {
+    right: 0, east: 0,
+    up: 90, top: 90, north: 90, above: 90,
+    left: 180, west: 180,
+    down: 270, bottom: 270, south: 270, below: 270,
+    northeast: 45,
+    northwest: 135,
+    southwest: 225,
+    southeast: 315
+  };
+
+  /**
+   * Parses a raw Web Speech API transcript into valid optotype tokens (or 'SKIP')
+   * for the active chart type.
+   */
+  function parseSpokenTokens(transcript, chartTypeId, landolt8 = false) {
+    if (!transcript || typeof transcript !== 'string') return [];
+    const spec = CHART_TYPES[chartTypeId] || CHART_TYPES.snellen;
+    const validChoices = new Set(getExamChoices(chartTypeId, landolt8).map(c => c.token));
+
+    let norm = transcript
+      .toLowerCase()
+      .replace(/[^a-z0-9\s']/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!norm) return [];
+
+    // Normalize multi-word phrases first
+    norm = norm.replace(
+      /\b(can't read|cant read|cannot read|don't know|dont know|not sure|no idea|too blurry|too small)\b/g,
+      ' skip '
+    );
+    if (validChoices.has(45)) {
+      norm = norm
+        .replace(/\b(up right|upper right|top right|north east)\b/g, ' northeast ')
+        .replace(/\b(up left|upper left|top left|north west)\b/g, ' northwest ')
+        .replace(/\b(down left|lower left|bottom left|south west)\b/g, ' southwest ')
+        .replace(/\b(down right|lower right|bottom right|south east)\b/g, ' southeast ');
+    }
+
+    const words = norm.split(/\s+/).filter(Boolean);
+    const out = [];
+
+    for (const w of words) {
+      if (w === 'skip' || w === 'pass' || w === 'next' || w === 'blurry') {
+        out.push('SKIP');
+        continue;
+      }
+      if (spec.kind === 'tumbling_e' || spec.kind === 'landolt_c') {
+        if (Object.prototype.hasOwnProperty.call(SPOKEN_DIR_MAP, w)) {
+          const dir = SPOKEN_DIR_MAP[w];
+          if (validChoices.has(dir)) out.push(dir);
+        }
+      } else {
+        const mapped = SPOKEN_LETTER_MAP[w];
+        if (mapped && validChoices.has(mapped)) {
+          out.push(mapped);
+        } else if (w.length > 1 && /^[a-z0-9]+$/.test(w) && !SPOKEN_LETTER_MAP[w]) {
+          // Handle run-together spoken letters like "def" -> D, E, F if every char is in pool
+          const chars = w.toUpperCase().split('');
+          if (chars.every(ch => validChoices.has(ch))) {
+            out.push(...chars);
+          }
+        }
+      }
+    }
+
+    return out;
+  }
+
+  function computeRowLogMAR(row) {
+    if (typeof row.logMAR === 'number') return row.logMAR;
+    return Math.log10(row.mar);
+  }
+
+  function finalizeExamScore(exam) {
+    const rows = exam.chartData.rows;
+    const lineStats = exam.lineStats;
+    const p = exam.bestPassedRowIdx;
+
+    if (p === null || p < 0) {
+      const r0 = lineStats[0] || { correct: 0, total: 5 };
+      const logMAR = +(computeRowLogMAR(rows[0]) + 0.1 - 0.02 * r0.correct).toFixed(2);
+      return {
+        eyeMode: exam.eyeMode,
+        chartTypeId: exam.chartTypeId,
+        snellen: r0.correct > 0 ? `< 20/200 (+${r0.correct})` : '< 20/200',
+        baseLabel: '< 20/200',
+        metric: '< 6/60',
+        logMAR,
+        decimal: +(Math.pow(10, -logMAR)).toFixed(2),
+        totalPrompts: exam.history.length,
+        passedRowIdx: -1
+      };
+    }
+
+    const passedRow = rows[p];
+    const pStat = lineStats[p] || { correct: 5, total: 5 };
+    const missedOnPassed = Math.max(0, pStat.total - pStat.correct);
+    const nextStat = (p + 1 < rows.length) ? lineStats[p + 1] : null;
+    const plusOnNext = nextStat ? nextStat.correct : 0;
+
+    let modifier = '';
+    if (missedOnPassed > 0 && plusOnNext === 0) {
+      modifier = ` -${missedOnPassed}`;
+    } else if (missedOnPassed === 0 && plusOnNext > 0) {
+      modifier = ` +${plusOnNext}`;
+    } else if (missedOnPassed > 0 && plusOnNext > 0) {
+      modifier = ` -${missedOnPassed} +${plusOnNext}`;
+    }
+
+    const baseLogMAR = computeRowLogMAR(passedRow);
+    const interpLogMAR = +(baseLogMAR + 0.02 * missedOnPassed - 0.02 * plusOnNext).toFixed(2);
+    const decimal = +(Math.pow(10, -interpLogMAR)).toFixed(2);
+
+    return {
+      eyeMode: exam.eyeMode,
+      chartTypeId: exam.chartTypeId,
+      snellen: `${passedRow.label}${modifier}`,
+      baseLabel: passedRow.label,
+      metric: `${passedRow.metric}${modifier}`,
+      logMAR: interpLogMAR,
+      decimal,
+      totalPrompts: exam.history.length,
+      passedRowIdx: p
+    };
+  }
+
+  function createExamSession(chartTypeId, eyeMode = 'OU', options = {}) {
+    const rng = options.rng || Math.random;
+    const landolt8 = !!options.landolt8;
+    const chartData = generateChartData(chartTypeId, null, { landolt8, rng });
+    const idx2020 = Math.max(1, chartData.rows.findIndex(r => r.denom === 20));
+
+    return {
+      status: 'active',       // 'active' | 'complete'
+      phase: 'screening',     // 'screening' (1/row descent) | 'threshold' (5/row verification)
+      chartTypeId,
+      landolt8,
+      eyeMode,
+      idx2020,
+      rowIdx: 0,
+      colIdx: 0,
+      trialInRow: 0,
+      rowCorrect: 0,
+      bestPassedRowIdx: null,
+      lineStats: {},          // rowIdx -> { correct, total }
+      history: [],
+      lastFeedback: null,
+      result: null,
+      chartData
+    };
+  }
+
+  function getExamTargetItem(exam) {
+    const row = exam.chartData.rows[exam.rowIdx];
+    if (!row) return null;
+    return row.items[Math.min(exam.colIdx, row.items.length - 1)];
+  }
+
+  function advanceExamChartForTrial(exam, rng) {
+    const row = exam.chartData.rows[exam.rowIdx];
+    if (exam.phase === 'screening') {
+      exam.chartData = generateChartData(exam.chartTypeId, exam.chartData, { landolt8: exam.landolt8, rng });
+      const newRow = exam.chartData.rows[exam.rowIdx];
+      exam.colIdx = Math.floor(newRow.items.length / 2);
+      return;
+    }
+
+    // Threshold phase: 5 trials per row
+    if (exam.trialInRow === 0) {
+      exam.chartData = generateChartData(exam.chartTypeId, exam.chartData, { landolt8: exam.landolt8, rng });
+      exam.colIdx = 0;
+    } else if (exam.trialInRow < row.items.length) {
+      exam.colIdx = exam.trialInRow;
+    } else {
+      // Row has fewer than 5 columns (e.g. 20/200 has 1, 20/100 has 2): shuffle fresh optotype!
+      exam.chartData = generateChartData(exam.chartTypeId, exam.chartData, { landolt8: exam.landolt8, rng });
+      const refreshedRow = exam.chartData.rows[exam.rowIdx];
+      exam.colIdx = exam.trialInRow % refreshedRow.items.length;
+    }
+  }
+
+  function submitExamResponse(exam, answerToken, options = {}) {
+    if (!exam || exam.status !== 'active') return exam;
+    const rng = options.rng || Math.random;
+    const target = getExamTargetItem(exam);
+    const isCorrect = answerToken !== 'SKIP' && answerToken === target.token;
+
+    exam.history.push({
+      phase: exam.phase,
+      rowIdx: exam.rowIdx,
+      label: exam.chartData.rows[exam.rowIdx].label,
+      expected: target.token,
+      given: answerToken,
+      correct: isCorrect
+    });
+    exam.lastFeedback = {
+      correct: isCorrect,
+      skipped: answerToken === 'SKIP'
+    };
+
+    const maxRow = exam.chartData.rows.length - 1;
+
+    if (exam.phase === 'screening') {
+      if (isCorrect) {
+        if (exam.rowIdx < exam.idx2020 - 1) {
+          exam.rowIdx += 1;
+          advanceExamChartForTrial(exam, rng);
+          return exam;
+        }
+        // Reached row just above 20/20 cleanly -> enter 5-trial threshold at 20/20
+        exam.phase = 'threshold';
+        exam.rowIdx = Math.min(maxRow, exam.rowIdx + 1);
+        exam.trialInRow = 0;
+        exam.rowCorrect = 0;
+        advanceExamChartForTrial(exam, rng);
+        return exam;
+      } else {
+        // Missed during screening -> step back 1 row (or stay at 0) and run 5-trial threshold
+        exam.phase = 'threshold';
+        exam.rowIdx = Math.max(0, exam.rowIdx - 1);
+        exam.trialInRow = 0;
+        exam.rowCorrect = 0;
+        advanceExamChartForTrial(exam, rng);
+        return exam;
+      }
+    }
+
+    // Phase === 'threshold' (5 trials on current row)
+    if (isCorrect) exam.rowCorrect += 1;
+    exam.trialInRow += 1;
+
+    if (exam.trialInRow < 5) {
+      advanceExamChartForTrial(exam, rng);
+      return exam;
+    }
+
+    // Completed all 5 trials on exam.rowIdx
+    exam.lineStats[exam.rowIdx] = { correct: exam.rowCorrect, total: 5 };
+    const passedLine = exam.rowCorrect >= 3; // >= 60% clinical majority criterion
+
+    if (passedLine) {
+      if (exam.bestPassedRowIdx === null || exam.rowIdx > exam.bestPassedRowIdx) {
+        exam.bestPassedRowIdx = exam.rowIdx;
+      }
+      const nextFine = exam.rowIdx + 1;
+      if (nextFine <= maxRow && !exam.lineStats[nextFine]) {
+        exam.rowIdx = nextFine;
+        exam.trialInRow = 0;
+        exam.rowCorrect = 0;
+        advanceExamChartForTrial(exam, rng);
+        return exam;
+      }
+      exam.status = 'complete';
+      exam.result = finalizeExamScore(exam);
+      return exam;
+    } else {
+      // Failed current line (< 3/5). If we haven't confirmed a passed baseline yet and a larger row exists, step up!
+      if (exam.bestPassedRowIdx === null && exam.rowIdx > 0 && !exam.lineStats[exam.rowIdx - 1]) {
+        exam.rowIdx -= 1;
+        exam.trialInRow = 0;
+        exam.rowCorrect = 0;
+        advanceExamChartForTrial(exam, rng);
+        return exam;
+      }
+      exam.status = 'complete';
+      exam.result = finalizeExamScore(exam);
+      return exam;
+    }
+  }
+
+  return {
+    DEG_TO_RAD,
+    ARCMIN_TO_RAD,
+    SNELLEN_ROWS,
+    ETDRS_ROWS,
+    CHART_TYPES,
+    CLASSIC_1862_SNELLEN,
+    DIR_ARROWS,
+    marFromFootDenom,
+    optotypeAngleRad,
+    optotypeHeightMeters,
+    strokeWidthMeters,
+    subtendedArcmin,
+    estimateHmdPPD,
+    nyquistSnellenDenom,
+    generateChartData,
+    buildGlyphGeometry,
+    getGlyph,
+    layoutChartPhysical,
+    getExamChoices,
+    parseSpokenTokens,
+    createExamSession,
+    getExamTargetItem,
+    submitExamResponse
+  };
+})();
+
+if (typeof window !== 'undefined') {
+  window.SnellenCore = SnellenCore;
+}
+</script>
+
+<script id="snellen-app">
+(() => {
+  if (typeof document === 'undefined') return;
+
+  // ==========================================================================
+  // Application State
+  // ==========================================================================
+  const state = {
+    viewMode: '3d',          // '3d' | '2d'
+    chartTypeId: 'snellen',
+    landolt8: false,
+    layoutMode: 'full',      // 'full' | 'line' | 'single'
+    activeRowIdx: 7,         // defaults to 20/20 on Snellen
+    activeColIdx: 0,
+    cycleCount: 1,
+    targetDistance: 1.5,     // meters (default 1.5m VR focal plane match)
+    lockAngularSize: true,   // auto-compensate live eye distance so 20/20 === 5.00'
+    eyeMode: 'OU',           // 'OU' | 'OD' | 'OS'
+    envTheme: 0,             // 0 = Dim Clinic, 1 = Dark Room, 2 = Bright Exam Room
+    showAnswers: true,
+    pxPerMm: 96 / 25.4,      // 2D calibration (~3.78 px/mm default)
+    chartData: null,
+
+    // Scored Acuity Exam & Voice Recognition State
+    exam: null,
+    scores: { OD: null, OS: null, OU: null },
+    voiceEnabled: false,
+    voiceListening: false,
+    voiceStatusText: 'Mic off',
+
+    // 3D Camera / World Anchor State
+    eyePos: [0, 1.60, 0],    // Cyclopean / active eye position in world meters
+    orbitYaw: 0,
+    orbitPitch: 0,
+    simDistOffset: 0,        // Scroll-wheel lean simulation in 3D preview
+    chartAnchorPos: [0, 1.60, -1.5],
+    chartAnchorYaw: 0,       // Yaw facing back toward user (0 = faces +Z)
+    panelPos: [0, 1.13, -1.12],
+    panelPitch: -0.42,       // Tilted ~24 deg upward toward user
+
+    // Live diagnostics
+    liveEyeDistance: 1.5,
+    appliedScale: 1.0,
+    hmdPPD: null,
+    xrSession: null,
+    xrMode: null,
+    needsRecenterInXR: false
+  };
+
+  state.chartData = SnellenCore.generateChartData(state.chartTypeId, null);
+
+  // ==========================================================================
+  // Minimal 4x4 Matrix Math (Column-Major for WebGL2)
+  // ==========================================================================
+  const M4 = {
+    identity() {
+      return new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+      ]);
+    },
+    multiply(a, b) {
+      const out = new Float32Array(16);
+      for (let c = 0; c < 4; c++) {
+        for (let r = 0; r < 4; r++) {
+          out[c * 4 + r] =
+            a[0 * 4 + r] * b[c * 4 + 0] +
+            a[1 * 4 + r] * b[c * 4 + 1] +
+            a[2 * 4 + r] * b[c * 4 + 2] +
+            a[3 * 4 + r] * b[c * 4 + 3];
+        }
+      }
+      return out;
+    },
+    perspective(fovYRad, aspect, near, far) {
+      const f = 1.0 / Math.tan(fovYRad * 0.5);
+      const nf = 1.0 / (near - far);
+      return new Float32Array([
+        f / aspect, 0, 0, 0,
+        0, f, 0, 0,
+        0, 0, (far + near) * nf, -1,
+        0, 0, (2 * far * near) * nf, 0
+      ]);
+    },
+    translation(x, y, z) {
+      return new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        x, y, z, 1
+      ]);
+    },
+    scaling(sx, sy, sz) {
+      return new Float32Array([
+        sx, 0, 0, 0,
+        0, sy, 0, 0,
+        0, 0, sz, 0,
+        0, 0, 0, 1
+      ]);
+    },
+    rotationX(rad) {
+      const c = Math.cos(rad), s = Math.sin(rad);
+      return new Float32Array([
+        1, 0, 0, 0,
+        0, c, s, 0,
+        0, -s, c, 0,
+        0, 0, 0, 1
+      ]);
+    },
+    rotationY(rad) {
+      const c = Math.cos(rad), s = Math.sin(rad);
+      return new Float32Array([
+        c, 0, -s, 0,
+        0, 1, 0, 0,
+        s, 0, c, 0,
+        0, 0, 0, 1
+      ]);
+    },
+    rotationZ(rad) {
+      const c = Math.cos(rad), s = Math.sin(rad);
+      return new Float32Array([
+        c, s, 0, 0,
+        -s, c, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+      ]);
+    },
+    trsYPR(pos, yaw, pitch) {
+      return M4.multiply(
+        M4.translation(pos[0], pos[1], pos[2]),
+        M4.multiply(M4.rotationY(yaw), M4.rotationX(pitch))
+      );
+    },
+    invertRigid(m) {
+      // Invert rigid body matrix (orthonormal upper-left 3x3 + translation)
+      const r00 = m[0], r01 = m[1], r02 = m[2];
+      const r10 = m[4], r11 = m[5], r12 = m[6];
+      const r20 = m[8], r21 = m[9], r22 = m[10];
+      const tx = m[12], ty = m[13], tz = m[14];
+      return new Float32Array([
+        r00, r10, r20, 0,
+        r01, r11, r21, 0,
+        r02, r12, r22, 0,
+        -(r00 * tx + r01 * ty + r02 * tz),
+        -(r10 * tx + r11 * ty + r12 * tz),
+        -(r20 * tx + r21 * ty + r22 * tz),
+        1
+      ]);
+    },
+    transformPoint(m, p) {
+      return [
+        m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+        m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+        m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]
+      ];
+    },
+    transformDir(m, d) {
+      return [
+        m[0] * d[0] + m[4] * d[1] + m[8] * d[2],
+        m[1] * d[0] + m[5] * d[1] + m[9] * d[2],
+        m[2] * d[0] + m[6] * d[1] + m[10] * d[2]
+      ];
+    }
+  };
+
+  // ==========================================================================
+  // WebGL2 Renderer Setup
+  // ==========================================================================
+  const glCanvas = document.getElementById('glCanvas');
+  const canvas2d = document.getElementById('canvas2d');
+  const ctx2d = canvas2d.getContext('2d');
+
+  const gl = glCanvas.getContext('webgl2', {
+    antialias: true,
+    alpha: true,
+    xrCompatible: true,
+    powerPreference: 'high-performance'
+  });
+
+  function compileProgram(vsSrc, fsSrc) {
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, vsSrc);
+    gl.compileShader(vs);
+    if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+      throw new Error('VS error: ' + gl.getShaderInfoLog(vs));
+    }
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, fsSrc);
+    gl.compileShader(fs);
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+      throw new Error('FS error: ' + gl.getShaderInfoLog(fs));
+    }
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error('Link error: ' + gl.getProgramInfoLog(prog));
+    }
+    return prog;
+  }
+
+  // Solid color shader (used for crisp vector optotypes, room geometry, laser rays)
+  const colorProg = gl ? compileProgram(
+    `#version 300 es
+    layout(location = 0) in vec3 aPos;
+    uniform mat4 uMVP;
+    void main() {
+      gl_Position = uMVP * vec4(aPos, 1.0);
+    }`,
+    `#version 300 es
+    precision highp float;
+    uniform vec4 uColor;
+    out vec4 outColor;
+    void main() {
+      outColor = uColor;
+    }`
+  ) : null;
+
+  // Textured quad shader (used for margin acuity labels, 3D VR control panel, eye-occluder badge)
+  const texProg = gl ? compileProgram(
+    `#version 300 es
+    layout(location = 0) in vec3 aPos;
+    layout(location = 1) in vec2 aUV;
+    uniform mat4 uMVP;
+    out vec2 vUV;
+    void main() {
+      vUV = aUV;
+      gl_Position = uMVP * vec4(aPos, 1.0);
+    }`,
+    `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uTex;
+    uniform float uOpacity;
+    out vec4 outColor;
+    void main() {
+      vec4 c = texture(uTex, vUV);
+      outColor = vec4(c.rgb, c.a * uOpacity);
+    }`
+  ) : null;
+
+  const uColorMVP = gl ? gl.getUniformLocation(colorProg, 'uMVP') : null;
+  const uColorVal = gl ? gl.getUniformLocation(colorProg, 'uColor') : null;
+  const uTexMVP = gl ? gl.getUniformLocation(texProg, 'uMVP') : null;
+  const uTexSampler = gl ? gl.getUniformLocation(texProg, 'uTex') : null;
+  const uTexOpacity = gl ? gl.getUniformLocation(texProg, 'uOpacity') : null;
+
+  // Reusable unit quad [-0.5, 0.5] x [-0.5, 0.5] on Z=0
+  let quadVAO = null;
+  let texQuadVAO = null;
+  let roomGridVAO = null;
+  let roomGridVertCount = 0;
+  let chartOptotypesVAO = null;
+  let chartOptotypesVBO = null;
+  let chartOptotypesVertCount = 0;
+
+  if (gl) {
+    // Solid unit quad
+    quadVAO = gl.createVertexArray();
+    gl.bindVertexArray(quadVAO);
+    const qBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, qBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -0.5, -0.5, 0,   0.5, -0.5, 0,   0.5,  0.5, 0,
+      -0.5, -0.5, 0,   0.5,  0.5, 0,  -0.5,  0.5, 0
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    // Textured unit quad
+    texQuadVAO = gl.createVertexArray();
+    gl.bindVertexArray(texQuadVAO);
+    const tqBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, tqBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -0.5, -0.5, 0,  0, 1,
+       0.5, -0.5, 0,  1, 1,
+       0.5,  0.5, 0,  1, 0,
+      -0.5, -0.5, 0,  0, 1,
+       0.5,  0.5, 0,  1, 0,
+      -0.5,  0.5, 0,  0, 0
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
+
+    // Floor distance reference lines (every 1m + clinical 6.096m marker)
+    const lines = [];
+    for (let x = -4; x <= 4; x += 1) {
+      lines.push(x, 0.001, 2, x, 0.001, -8);
+    }
+    for (let z = 2; z >= -8; z -= 1) {
+      lines.push(-4, 0.001, z, 4, 0.001, z);
+    }
+    roomGridVertCount = lines.length / 3;
+    roomGridVAO = gl.createVertexArray();
+    gl.bindVertexArray(roomGridVAO);
+    const rgBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, rgBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lines), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    // Dynamic batched optotype triangle buffer
+    chartOptotypesVAO = gl.createVertexArray();
+    gl.bindVertexArray(chartOptotypesVAO);
+    chartOptotypesVBO = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, chartOptotypesVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, 4096, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindVertexArray(null);
+  }
+
+  function createCanvasTexture(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    let tex = null;
+    if (gl) {
+      tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    return {
+      canvas: c,
+      ctx,
+      tex,
+      upload() {
+        if (!gl || !tex) return;
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+        gl.generateMipmap(gl.TEXTURE_2D);
+      }
+    };
+  }
+
+  const marginLabelLayer = createCanvasTexture(1024, 1536);
+  const vrPanelLayer = createCanvasTexture(1280, 800);
+  const occluderNoticeLayer = createCanvasTexture(512, 128);
+
+  // Render dim monocular occluder indicator once
+  function updateOccluderTexture(text) {
+    const { ctx, canvas } = occluderNoticeLayer;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.font = '600 22px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    occluderNoticeLayer.upload();
+  }
+  updateOccluderTexture('Eye Occluded for Monocular Acuity Test');
+
+  // ==========================================================================
+  // Rebuild Physical Chart Mesh & Margin Labels
+  // ==========================================================================
+  let currentLayout = null;
+
+  function rebuildChartGeometry() {
+    currentLayout = SnellenCore.layoutChartPhysical(
+      state.chartData,
+      state.targetDistance,
+      state.layoutMode,
+      state.activeRowIdx,
+      state.activeColIdx
+    );
+
+    // Batch all optotypes into one crisp world-scaled local mesh (on z = 0)
+    const verts = [];
+    for (const op of currentLayout.optotypes) {
+      const glyph = SnellenCore.getGlyph(op.glyph);
+      const scale = op.size / 5.0; // [0..5] -> [-size/2 .. +size/2]
+      const rad = op.rotDeg * SnellenCore.DEG_TO_RAD;
+      const c = Math.cos(rad);
+      const s = Math.sin(rad);
+
+      for (let i = 0; i < glyph.tris.length; i += 2) {
+        const lx = (glyph.tris[i] - 2.5) * scale;
+        const ly = (glyph.tris[i + 1] - 2.5) * scale;
+        const rx = lx * c - ly * s;
+        const ry = lx * s + ly * c;
+        verts.push(op.cx + rx, op.cy + ry, 0.0);
+      }
+    }
+
+    chartOptotypesVertCount = verts.length / 3;
+    if (gl) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, chartOptotypesVBO);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+    }
+
+    // Render crisp acuity side labels & chart header onto marginLabelLayer
+    const { ctx, canvas } = marginLabelLayer;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const bw = currentLayout.boardWidth;
+    const bh = currentLayout.boardHeight;
+    const toPxX = x => ((x / bw) + 0.5) * canvas.width;
+    const toPxY = y => (0.5 - (y / bh)) * canvas.height;
+
+    // Subtle clinical header at very top of lightbox
+    ctx.fillStyle = '#475569';
+    ctx.font = '700 22px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const distFt = (state.targetDistance / 0.3048).toFixed(1);
+    ctx.fillText(
+      `${state.chartData.chartName.toUpperCase()}  •  CALIBRATED ${state.targetDistance.toFixed(2)} m (${distFt} ft)`,
+      canvas.width * 0.5,
+      18
+    );
+
+    for (const rl of currentLayout.rowLayouts) {
+      const py = toPxY(rl.centerY);
+      const isSelected = rl.originalIdx === currentLayout.activeRowIdx;
+
+      ctx.font = `${isSelected ? '700' : '600'} 23px -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.fillStyle = isSelected ? '#1d4ed8' : '#475569';
+      ctx.textBaseline = 'middle';
+
+      // Left margin: Snellen 20/X
+      ctx.textAlign = 'left';
+      ctx.fillText(isSelected ? `▶ ${rl.row.label}` : rl.row.label, 24, py);
+
+      // Right margin: Metric 6/X (or LogMAR for ETDRS)
+      ctx.textAlign = 'right';
+      const rightTxt = rl.row.logMAR !== undefined
+        ? `${rl.row.logMAR >= 0 ? '+' : ''}${rl.row.logMAR.toFixed(1)}`
+        : rl.row.metric;
+      ctx.fillText(rightTxt, canvas.width - 24, py);
+    }
+
+    marginLabelLayer.upload();
+    updateSidebarUI();
+    renderVRControlPanel(null);
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  // ==========================================================================
+  // Interactive 3D VR Control Console (Canvas UI + Raycast Buttons)
+  // ==========================================================================
+  const PANEL_WIDTH_M = 0.68;
+  const PANEL_HEIGHT_M = 0.425;
+  const vrButtons = [];
+
+  function buildVRButtons() {
+    vrButtons.length = 0;
+    const addBtn = (id, label, x, y, w, h, isActiveFn, accent, action) => {
+      vrButtons.push({ id, label, x, y, w, h, isActiveFn, accent, action });
+    };
+
+    // Mode A: Active Scored Exam -> Context-Smart 3D Virtual Optotype Keypad
+    if (state.exam && state.exam.status === 'active') {
+      const choices = SnellenCore.getExamChoices(state.chartTypeId, state.landolt8);
+      const cols = choices.length <= 4 ? choices.length : Math.min(5, Math.ceil(choices.length / 2));
+      const rows = Math.ceil(choices.length / cols);
+      const totalW = 1200;
+      const gapX = 18;
+      const gapY = 16;
+      const btnW = Math.floor((totalW - gapX * (cols - 1)) / cols);
+      const btnH = rows === 1 ? 150 : 112;
+      const startY = rows === 1 ? 235 : 195;
+
+      choices.forEach((ch, idx) => {
+        const r = Math.floor(idx / cols);
+        const c = idx % cols;
+        const rowCount = r === rows - 1 ? (choices.length - r * cols) : cols;
+        const rowSpanW = rowCount * btnW + (rowCount - 1) * gapX;
+        const rowStartX = Math.floor((1280 - rowSpanW) * 0.5);
+        addBtn(
+          `ans_${ch.token}`,
+          ch.label,
+          rowStartX + c * (btnW + gapX),
+          startY + r * (btnH + gapY),
+          btnW,
+          btnH,
+          () => false,
+          'blue',
+          () => submitExamAnswer(ch.token)
+        );
+      });
+
+      // Exam action bar at bottom
+      addBtn('ans_skip', "? Can't Read (Skip)", 40, 468, 360, 74, () => false, null, () => submitExamAnswer('SKIP'));
+      addBtn('exam_voice', state.voiceEnabled ? '🎤 Voice: ON' : '🎤 Voice: OFF', 420, 468, 270, 74, () => state.voiceEnabled, state.voiceEnabled ? 'green' : null, () => toggleVoiceInput());
+      addBtn('exam_recenter', 'Recenter', 710, 468, 255, 74, () => false, null, () => recenterChart());
+      addBtn('exam_cancel', '✕ End Exam', 985, 468, 255, 74, () => false, 'red', () => cancelExam());
+
+      // Eye quick-switch row
+      addBtn('eye_OU', 'Both (OU)', 40, 568, 240, 64, () => state.eyeMode === 'OU', null, () => { setEyeMode('OU'); startExam(); });
+      addBtn('eye_OD', 'Right (OD)', 300, 568, 240, 64, () => state.eyeMode === 'OD', null, () => { setEyeMode('OD'); startExam(); });
+      addBtn('eye_OS', 'Left (OS)', 560, 568, 240, 64, () => state.eyeMode === 'OS', null, () => { setEyeMode('OS'); startExam(); });
+      addBtn('layout_line', state.layoutMode === 'line' ? 'Mode: Line' : 'Mode: Full', 820, 568, 420, 64, () => state.layoutMode === 'line', null, () => setLayoutMode(state.layoutMode === 'line' ? 'full' : 'line'));
+      return;
+    }
+
+    // Mode B: Exam Completed -> Clinical Score Summary & Next-Eye Actions
+    if (state.exam && state.exam.status === 'complete') {
+      addBtn('exam_retry', `↻ Retest (${state.eyeMode})`, 40, 465, 290, 76, () => false, 'green', () => startExam());
+      addBtn('exam_od', 'Test Right (OD)', 350, 465, 285, 76, () => state.eyeMode === 'OD', null, () => { setEyeMode('OD'); startExam(); });
+      addBtn('exam_os', 'Test Left (OS)', 655, 465, 285, 76, () => state.eyeMode === 'OS', null, () => { setEyeMode('OS'); startExam(); });
+      addBtn('exam_ou', 'Test Both (OU)', 960, 465, 280, 76, () => state.eyeMode === 'OU', null, () => { setEyeMode('OU'); startExam(); });
+      addBtn('exam_done', '← Back to Chart Controls', 40, 568, 1200, 68, () => false, 'blue', () => cancelExam());
+      return;
+    }
+
+    // Mode C: Standard Free-Explore Controls (with Start Scored Exam button!)
+    addBtn('cycle', '↻ Cycle Chart', 40, 128, 250, 78, () => false, 'green', () => cycleChart());
+    addBtn('start_exam', '▶ Start Scored Exam', 305, 128, 305, 78, () => false, 'blue', () => startExam());
+    addBtn('layout_full', 'Full', 625, 128, 120, 78, () => state.layoutMode === 'full', null, () => setLayoutMode('full'));
+    addBtn('layout_line', 'Line', 758, 128, 120, 78, () => state.layoutMode === 'line', null, () => setLayoutMode('line'));
+    addBtn('row_up', '▲ Row', 892, 128, 168, 78, () => false, null, () => stepActiveRow(-1));
+    addBtn('row_dn', '▼ Row', 1072, 128, 168, 78, () => false, null, () => stepActiveRow(1));
+
+    // Row 2: Chart Types (6 clinical charts)
+    const charts = [
+      ['snellen', 'Snellen'],
+      ['etdrs', 'ETDRS'],
+      ['tumbling_e', 'Tumbling E'],
+      ['landolt_c', 'Landolt C'],
+      ['hotv', 'HOTV'],
+      ['numbers', 'Numbers']
+    ];
+    charts.forEach(([cid, cname], idx) => {
+      addBtn(`chart_${cid}`, cname, 40 + idx * 202, 245, 190, 70, () => state.chartTypeId === cid, null, () => setChartType(cid));
+    });
+
+    // Row 3: Optical Distance Presets
+    const dists = [
+      [6.096, '20 ft (6.1m)'],
+      [4.0, '4.0 m ETDRS'],
+      [2.0, '2.0 m VR'],
+      [1.5, '1.5 m VR'],
+      [1.3, '1.3 m Quest3']
+    ];
+    dists.forEach(([d, dname], idx) => {
+      addBtn(`dist_${d}`, dname, 40 + idx * 244, 358, 230, 68, () => Math.abs(state.targetDistance - d) < 0.01, null, () => setTargetDistance(d));
+    });
+
+    // Row 4: Virtual Eye Occluder + Sizing Lock + Recenter + Exit XR
+    addBtn('eye_OU', 'Both Eyes (OU)', 40, 470, 215, 72, () => state.eyeMode === 'OU', null, () => setEyeMode('OU'));
+    addBtn('eye_OD', 'Right Eye (OD)', 270, 470, 215, 72, () => state.eyeMode === 'OD', null, () => setEyeMode('OD'));
+    addBtn('eye_OS', 'Left Eye (OS)', 500, 470, 215, 72, () => state.eyeMode === 'OS', null, () => setEyeMode('OS'));
+    addBtn('lock_angle', 'Lock 5′ Angle', 735, 470, 245, 72, () => state.lockAngularSize, null, () => setLockAngle(!state.lockAngularSize));
+    addBtn('recenter', 'Recenter Chart', 995, 470, 245, 72, () => false, 'blue', () => recenterChart());
+
+    // Row 5: Environment & Exit Session
+    addBtn('theme', 'Room Lighting', 40, 578, 260, 64, () => false, null, () => cycleEnvTheme());
+    addBtn('single_opt', '1-Optotype Mode', 318, 578, 260, 64, () => state.layoutMode === 'single', null, () => setLayoutMode(state.layoutMode === 'single' ? 'full' : 'single'));
+    addBtn('landolt_dir', 'Landolt: 4/8 Dir', 596, 578, 260, 64, () => state.landolt8, null, () => {
+      state.landolt8 = !state.landolt8;
+      if (state.chartTypeId !== 'landolt_c') setChartType('landolt_c');
+      else cycleChart();
+    });
+    addBtn('exit_xr', 'Exit VR / AR', 995, 578, 245, 64, () => false, 'red', () => {
+      if (state.xrSession) state.xrSession.end();
+    });
+  }
+  buildVRButtons();
+
+  let lastHoveredBtnId = '__init__';
+  let panelDirty = true;
+
+  function renderVRControlPanel(hoveredBtnId) {
+    if (!panelDirty && hoveredBtnId === lastHoveredBtnId) return;
+    lastHoveredBtnId = hoveredBtnId;
+    panelDirty = false;
+    buildVRButtons();
+
+    const { ctx, canvas } = vrPanelLayer;
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Panel rounded card background
+    ctx.fillStyle = 'rgba(18, 24, 36, 0.96)';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.roundRect(8, 8, W - 16, H - 16, 28);
+    ctx.fill();
+    ctx.stroke();
+
+    // Header bar
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '700 30px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const activeRow = state.chartData.rows[Math.min(state.activeRowIdx, state.chartData.rows.length - 1)];
+    const headerTitle = state.exam
+      ? (state.exam.status === 'active'
+          ? `SCORED EXAM (${state.eyeMode})  •  Row ${activeRow.label}`
+          : `EXAM COMPLETE (${state.exam.result.eyeMode})`)
+      : `WebXR Clinical Acuity  •  Row: ${activeRow.label} (${activeRow.metric})`;
+    ctx.fillText(headerTitle, 42, 66);
+
+    // Live distance & PPD telemetry badge
+    ctx.textAlign = 'right';
+    ctx.font = '600 24px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#93c5fd';
+    const ppdTxt = state.hmdPPD
+      ? `  |  HMD ~${state.hmdPPD.toFixed(0)} PPD (~20/${SnellenCore.nyquistSnellenDenom(state.hmdPPD)})`
+      : '';
+    ctx.fillText(
+      `Dist: ${state.liveEyeDistance.toFixed(2)} m  |  20/20 = 5.00′${ppdTxt}`,
+      W - 42,
+      66
+    );
+
+    // Divider
+    ctx.strokeStyle = '#293548';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(40, 104);
+    ctx.lineTo(W - 40, 104);
+    ctx.stroke();
+
+    // Contextual Exam Prompt or Score Summary Card
+    if (state.exam && state.exam.status === 'active') {
+      const phaseTxt = state.exam.phase === 'screening'
+        ? 'Quick Screening (1 per row) — Read the blue-underlined optotype'
+        : `Threshold Verification (${state.exam.trialInRow + 1}/5 on ${activeRow.label}) — Read underlined optotype`;
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '600 25px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(phaseTxt, 42, 148);
+
+      if (state.voiceEnabled) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = state.voiceListening ? '#fca5a5' : '#94a3b8';
+        ctx.fillText(`🎤 ${state.voiceStatusText}`, W - 42, 148);
+      }
+    } else if (state.exam && state.exam.status === 'complete' && state.exam.result) {
+      const res = state.exam.result;
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.14)';
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(40, 132, W - 80, 300, 20);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ecfdf5';
+      ctx.textAlign = 'center';
+      ctx.font = '800 68px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText(`${res.eyeMode}:  ${res.snellen}`, W * 0.5, 218);
+
+      ctx.fillStyle = '#a7f3d0';
+      ctx.font = '600 30px -apple-system, BlinkMacSystemFont, sans-serif';
+      const sign = res.logMAR >= 0 ? '+' : '';
+      ctx.fillText(
+        `Metric: ${res.metric}    •    LogMAR: ${sign}${res.logMAR.toFixed(2)}    •    Decimal: ${res.decimal.toFixed(2)}`,
+        W * 0.5,
+        292
+      );
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '500 23px -apple-system, BlinkMacSystemFont, sans-serif';
+      const scoreSummary = ['OD', 'OS', 'OU']
+        .map(e => `${e}: ${state.scores[e] ? state.scores[e].snellen : '—'}`)
+        .join('     |     ');
+      ctx.fillText(`Session Scorecard   —   ${scoreSummary}`, W * 0.5, 372);
+    }
+
+    // Buttons
+    for (const b of vrButtons) {
+      const active = b.isActiveFn();
+      const hovered = b.id === hoveredBtnId;
+
+      let bg = '#1e293b';
+      let border = '#3b4963';
+      let fg = '#e2e8f0';
+
+      if (b.accent === 'green') {
+        bg = hovered ? '#10b981' : '#059669';
+        border = '#34d399';
+        fg = '#ffffff';
+      } else if (b.accent === 'blue') {
+        bg = hovered ? '#3b82f6' : '#2563eb';
+        border = '#60a5fa';
+        fg = '#ffffff';
+      } else if (b.accent === 'red') {
+        bg = hovered ? '#dc2626' : '#7f1d1d';
+        border = '#f87171';
+        fg = '#fecaca';
+      } else if (active) {
+        bg = hovered ? '#2563eb' : '#1d4ed8';
+        border = '#93c5fd';
+        fg = '#ffffff';
+      } else if (hovered) {
+        bg = '#334155';
+        border = '#94a3b8';
+      }
+
+      ctx.fillStyle = bg;
+      ctx.strokeStyle = border;
+      ctx.lineWidth = hovered ? 4 : 2.5;
+      ctx.beginPath();
+      ctx.roundRect(b.x, b.y, b.w, b.h, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = fg;
+      const isKeypadKey = b.id.startsWith('ans_') && b.id !== 'ans_skip';
+      ctx.font = `${isKeypadKey ? '800 34px' : '700 23px'} -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.label, b.x + b.w * 0.5, b.y + b.h * 0.5);
+    }
+
+    // Bottom shortcut hint strip
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '500 20px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    const footerTip = (state.exam && state.exam.status === 'active')
+      ? 'Answer via 3D Keypad, Voice ("Charlie", "Up", "Skip"), VR Thumbstick (for E/C directions), or Keyboard'
+      : 'Tip: Point ray & pull Trigger to click  •  Trigger away from panel = Shuffle Chart  •  Thumbstick ↑↓ = Row  •  Grip = Recenter';
+    ctx.fillText(footerTip, W * 0.5, 718);
+
+    vrPanelLayer.upload();
+  }
+
+  // Raycast against the 3D VR Control Panel plane
+  function intersectRayWithPanel(rayOrigin, rayDir) {
+    const panelModel = M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch);
+    const invPanel = M4.invertRigid(panelModel);
+    const lo = M4.transformPoint(invPanel, rayOrigin);
+    const ld = M4.transformDir(invPanel, rayDir);
+
+    if (Math.abs(ld[2]) < 1e-5) return null;
+    const t = -lo[2] / ld[2];
+    if (t <= 0.02 || t > 8.0) return null;
+
+    const lx = lo[0] + t * ld[0];
+    const ly = lo[1] + t * ld[1];
+    if (Math.abs(lx) > PANEL_WIDTH_M * 0.5 || Math.abs(ly) > PANEL_HEIGHT_M * 0.5) {
+      return null;
+    }
+
+    const u = (lx / PANEL_WIDTH_M) + 0.5;
+    const v = 0.5 - (ly / PANEL_HEIGHT_M);
+    const px = u * vrPanelLayer.canvas.width;
+    const py = v * vrPanelLayer.canvas.height;
+
+    let hitBtn = null;
+    for (const b of vrButtons) {
+      if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+        hitBtn = b;
+        break;
+      }
+    }
+
+    const worldHit = [
+      rayOrigin[0] + t * rayDir[0],
+      rayOrigin[1] + t * rayDir[1],
+      rayOrigin[2] + t * rayDir[2]
+    ];
+    return { t, worldHit, btn: hitBtn };
+  }
+
+  // ==========================================================================
+  // Actions & State Transitions
+  // ==========================================================================
+  function cycleChart(classicPreset = false) {
+    state.chartData = SnellenCore.generateChartData(
+      state.chartTypeId,
+      classicPreset ? null : state.chartData,
+      { classicPreset, landolt8: state.landolt8 }
+    );
+    state.cycleCount += 1;
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function setChartType(typeId) {
+    state.chartTypeId = typeId;
+    const spec = SnellenCore.CHART_TYPES[typeId];
+    // Default active row to 20/20 row
+    const idx2020 = spec.rows.findIndex(r => r.denom === 20);
+    state.activeRowIdx = idx2020 >= 0 ? idx2020 : 0;
+    state.chartData = SnellenCore.generateChartData(typeId, null, { landolt8: state.landolt8 });
+    state.cycleCount += 1;
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function setLayoutMode(mode) {
+    state.layoutMode = mode;
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function stepActiveRow(delta) {
+    const maxIdx = state.chartData.rows.length - 1;
+    state.activeRowIdx = Math.max(0, Math.min(maxIdx, state.activeRowIdx + delta));
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function setTargetDistance(meters) {
+    state.targetDistance = meters;
+    state.simDistOffset = 0;
+    recenterChart();
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function setLockAngle(locked) {
+    state.lockAngularSize = locked;
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function setEyeMode(mode) {
+    state.eyeMode = mode;
+    if (mode === 'OD') updateOccluderTexture('OS (Left Eye) Occluded  •  Testing Right Eye (OD)');
+    else if (mode === 'OS') updateOccluderTexture('OD (Right Eye) Occluded  •  Testing Left Eye (OS)');
+    panelDirty = true;
+    updateSidebarUI();
+  }
+
+  function cycleEnvTheme() {
+    state.envTheme = (state.envTheme + 1) % 3;
+    panelDirty = true;
+    updateSidebarUI();
+  }
+
+  function recenterChart(forwardYaw = state.orbitYaw) {
+    const ex = state.eyePos[0];
+    const ey = state.eyePos[1];
+    const ez = state.eyePos[2];
+    const d = state.targetDistance;
+
+    // Forward horizontal unit vector for yaw (yaw=0 looks down -Z)
+    const fx = -Math.sin(forwardYaw);
+    const fz = -Math.cos(forwardYaw);
+
+    state.chartAnchorPos = [ex + fx * d, ey, ez + fz * d];
+    state.chartAnchorYaw = forwardYaw;
+
+    // Place floating VR control console comfortably at 1.12m reach, 0.47m below eye level
+    const panelDist = Math.min(1.15, Math.max(0.75, d * 0.82));
+    state.panelPos = [
+      ex + fx * panelDist,
+      Math.max(0.55, ey - 0.47),
+      ez + fz * panelDist
+    ];
+    state.simDistOffset = 0;
+    panelDirty = true;
+  }
+
+  // ==========================================================================
+  // Scored Exam Lifecycle & Hands-Free Voice Recognition
+  // ==========================================================================
+  let speechRec = null;
+
+  function syncStateFromExam() {
+    if (!state.exam) return;
+    state.chartData = state.exam.chartData;
+    state.activeRowIdx = state.exam.rowIdx;
+    state.activeColIdx = state.exam.colIdx;
+    state.cycleCount += 1;
+    if (state.exam.status === 'complete' && state.exam.result) {
+      state.scores[state.exam.result.eyeMode] = state.exam.result;
+    }
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function startExam() {
+    state.exam = SnellenCore.createExamSession(state.chartTypeId, state.eyeMode, {
+      landolt8: state.landolt8
+    });
+    // Pick initial middle column on top row
+    const r0 = state.exam.chartData.rows[0];
+    state.exam.colIdx = Math.floor(r0.items.length / 2);
+    syncStateFromExam();
+    if (state.voiceEnabled) ensureSpeechRecognitionRunning();
+  }
+
+  function submitExamAnswer(token) {
+    if (!state.exam || state.exam.status !== 'active') return;
+    SnellenCore.submitExamResponse(state.exam, token);
+    syncStateFromExam();
+  }
+
+  function cancelExam() {
+    state.exam = null;
+    state.activeColIdx = 0;
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function ensureSpeechRecognitionRunning() {
+    const SpeechCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechCtor) {
+      state.voiceEnabled = false;
+      state.voiceListening = false;
+      state.voiceStatusText = 'Speech API unavailable in this browser — use 3D Keypad / Stick';
+      panelDirty = true;
+      updateSidebarUI();
+      return;
+    }
+    if (!speechRec) {
+      speechRec = new SpeechCtor();
+      speechRec.continuous = true;
+      speechRec.interimResults = false;
+      speechRec.lang = 'en-US';
+
+      speechRec.onstart = () => {
+        state.voiceListening = true;
+        state.voiceStatusText = 'Listening… say letter, direction, or "Skip"';
+        panelDirty = true;
+        updateSidebarUI();
+      };
+
+      speechRec.onresult = event => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (!event.results[i].isFinal) continue;
+          const raw = event.results[i][0].transcript.trim();
+          const tokens = SnellenCore.parseSpokenTokens(raw, state.chartTypeId, state.landolt8);
+          if (tokens.length > 0) {
+            state.voiceStatusText = `Heard "${raw}" → ${tokens.map(t => SnellenCore.DIR_ARROWS[t] || t).join(' ')}`;
+            if (!state.exam || state.exam.status !== 'active') {
+              startExam();
+            }
+            for (const tok of tokens) {
+              if (state.exam && state.exam.status === 'active') {
+                submitExamAnswer(tok);
+              }
+            }
+          } else {
+            state.voiceStatusText = `Heard "${raw}" (not in current chart pool)`;
+          }
+          panelDirty = true;
+          updateSidebarUI();
+        }
+      };
+
+      speechRec.onerror = ev => {
+        state.voiceListening = false;
+        state.voiceStatusText = `Mic notice: ${ev.error || 'stopped'}`;
+        panelDirty = true;
+        updateSidebarUI();
+      };
+
+      speechRec.onend = () => {
+        state.voiceListening = false;
+        if (state.voiceEnabled) {
+          try { speechRec.start(); } catch { /* already started or blocked */ }
+        } else {
+          panelDirty = true;
+          updateSidebarUI();
+        }
+      };
+    }
+
+    if (state.voiceEnabled && !state.voiceListening) {
+      try { speechRec.start(); } catch { /* ignore duplicate start */ }
+    }
+  }
+
+  function toggleVoiceInput(forceVal) {
+    state.voiceEnabled = typeof forceVal === 'boolean' ? forceVal : !state.voiceEnabled;
+    if (state.voiceEnabled) {
+      ensureSpeechRecognitionRunning();
+    } else if (speechRec) {
+      state.voiceStatusText = 'Mic off';
+      try { speechRec.stop(); } catch { /* ignore */ }
+    }
+    panelDirty = true;
+    updateSidebarUI();
+  }
+
+  // ==========================================================================
+  // 2D Calibrated Screen Mode Renderer
+  // ==========================================================================
+  function render2DChart() {
+    if (state.viewMode !== '2d') return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas2d.getBoundingClientRect();
+    const cssW = Math.max(320, rect.width);
+    const cssH = Math.max(240, rect.height);
+    canvas2d.width = Math.round(cssW * dpr);
+    canvas2d.height = Math.round(cssH * dpr);
+
+    ctx2d.save();
+    ctx2d.scale(dpr, dpr);
+
+    // Light clinical background
+    ctx2d.fillStyle = '#e2e8f0';
+    ctx2d.fillRect(0, 0, cssW, cssH);
+
+    const layout = currentLayout;
+    const mToCssPx = 1000 * state.pxPerMm;
+
+    const boardPxW = Math.min(cssW - 28, Math.max(320, layout.boardWidth * mToCssPx));
+    const boardPxH = Math.max(layout.boardHeight * mToCssPx, 220);
+    const cx = cssW * 0.5;
+    const cy = cssH * 0.5;
+
+    // White lightbox surface
+    ctx2d.fillStyle = '#ffffff';
+    ctx2d.strokeStyle = '#1e293b';
+    ctx2d.lineWidth = 4;
+    ctx2d.beginPath();
+    ctx2d.roundRect(cx - boardPxW * 0.5, cy - boardPxH * 0.5, boardPxW, boardPxH, 10);
+    ctx2d.fill();
+    ctx2d.stroke();
+
+    // Row highlight & clinical reference bars
+    for (const rl of layout.rowLayouts) {
+      const ry = cy - rl.centerY * mToCssPx;
+      const rh = rl.height * mToCssPx;
+
+      if (rl.originalIdx === layout.activeRowIdx && state.layoutMode === 'full') {
+        ctx2d.fillStyle = 'rgba(59, 130, 246, 0.09)';
+        ctx2d.fillRect(cx - boardPxW * 0.48, ry - rh * 0.68, boardPxW * 0.96, rh * 1.36);
+      }
+
+      if (rl.row.barColor && state.layoutMode === 'full') {
+        const [r, g, b] = rl.row.barColor;
+        ctx2d.fillStyle = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+        const barH = Math.max(2, rh * 0.14);
+        ctx2d.fillRect(cx - rl.rowWidth * mToCssPx * 0.55, ry + rh * 0.66, rl.rowWidth * mToCssPx * 1.1, barH);
+      }
+
+      // Margin labels
+      ctx2d.fillStyle = rl.originalIdx === layout.activeRowIdx ? '#1d4ed8' : '#64748b';
+      ctx2d.font = `${rl.originalIdx === layout.activeRowIdx ? '700' : '600'} 12px -apple-system, sans-serif`;
+      ctx2d.textBaseline = 'middle';
+      ctx2d.textAlign = 'left';
+      ctx2d.fillText(rl.row.label, cx - boardPxW * 0.5 + 12, ry);
+      ctx2d.textAlign = 'right';
+      ctx2d.fillText(rl.row.metric, cx + boardPxW * 0.5 - 12, ry);
+    }
+
+    // Crisp vector 5x5 optotypes at exact calibrated millimeter size
+    ctx2d.fillStyle = '#0f1115';
+    for (const op of layout.optotypes) {
+      const glyph = SnellenCore.getGlyph(op.glyph);
+      const ox = cx + op.cx * mToCssPx;
+      const oy = cy - op.cy * mToCssPx;
+      const unitPx = (op.size * mToCssPx) / 5.0;
+
+      ctx2d.save();
+      ctx2d.translate(ox, oy);
+      ctx2d.rotate(-op.rotDeg * SnellenCore.DEG_TO_RAD);
+      for (const poly of glyph.polys) {
+        ctx2d.beginPath();
+        poly.forEach(([gx, gy], idx) => {
+          const px = (gx - 2.5) * unitPx;
+          const py = (2.5 - gy) * unitPx;
+          if (idx === 0) ctx2d.moveTo(px, py);
+          else ctx2d.lineTo(px, py);
+        });
+        ctx2d.closePath();
+        ctx2d.fill();
+      }
+      ctx2d.restore();
+
+      // Target optotype underline pointer during active scored exam
+      if (
+        state.exam &&
+        state.exam.status === 'active' &&
+        op.rowIdx === state.exam.rowIdx &&
+        op.colIdx === state.exam.colIdx
+      ) {
+        const ptrW = Math.max(10, op.size * mToCssPx * 1.15);
+        const ptrH = Math.max(3, op.size * mToCssPx * 0.16);
+        const ptrY = oy + Math.max(op.size * mToCssPx * 0.72, 6);
+        ctx2d.fillStyle = '#2563eb';
+        ctx2d.fillRect(ox - ptrW * 0.5, ptrY, ptrW, ptrH);
+        ctx2d.fillStyle = '#0f1115';
+      }
+    }
+
+    ctx2d.restore();
+  }
+
+  // ==========================================================================
+  // 3D WebGL2 Scene Renderer (Shared by Desktop 3D Preview & WebXR Stereo)
+  // ==========================================================================
+  function drawSolidQuad(vpMatrix, modelMatrix, r, g, b, a = 1.0) {
+    gl.useProgram(colorProg);
+    gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vpMatrix, modelMatrix));
+    gl.uniform4f(uColorVal, r, g, b, a);
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  function drawTexturedQuad(vpMatrix, modelMatrix, tex, opacity = 1.0) {
+    gl.useProgram(texProg);
+    gl.uniformMatrix4fv(uTexMVP, false, M4.multiply(vpMatrix, modelMatrix));
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(uTexSampler, 0);
+    gl.uniform1f(uTexOpacity, opacity);
+    gl.bindVertexArray(texQuadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  function renderEyeView(projMatrix, viewMatrix, eyeTag, controllers, isAR) {
+    // Virtual Monocular Eye Occluder in VR/AR stereo
+    const occluded =
+      (state.eyeMode === 'OD' && eyeTag === 'left') ||
+      (state.eyeMode === 'OS' && eyeTag === 'right');
+
+    if (occluded) {
+      // Neutral matte dark-gray field avoids harsh binocular rivalry
+      gl.clearColor(0.07, 0.08, 0.10, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.disable(gl.DEPTH_TEST);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      const badgeMVP = M4.multiply(M4.translation(0, -0.52, 0), M4.scaling(0.75, 0.18, 1));
+      drawTexturedQuad(M4.identity(), badgeMVP, occluderNoticeLayer.tex, 0.85);
+      gl.enable(gl.DEPTH_TEST);
+      return;
+    }
+
+    const themes = [
+      { bg: [0.09, 0.11, 0.15], floor: [0.12, 0.15, 0.20], grid: [0.19, 0.24, 0.32] }, // Dim Clinic
+      { bg: [0.02, 0.025, 0.035], floor: [0.04, 0.05, 0.07], grid: [0.09, 0.11, 0.15] }, // Dark Room
+      { bg: [0.76, 0.80, 0.85], floor: [0.66, 0.70, 0.76], grid: [0.54, 0.59, 0.66] }  // Bright Exam Room
+    ];
+    const th = themes[state.envTheme];
+
+    if (isAR) {
+      gl.clearColor(0, 0, 0, 0);
+    } else {
+      gl.clearColor(th.bg[0], th.bg[1], th.bg[2], 1.0);
+    }
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    const vp = M4.multiply(projMatrix, viewMatrix);
+
+    // 1. Exam room floor & distance grid (skipped in AR passthrough)
+    if (!isAR) {
+      const floorModel = M4.multiply(
+        M4.translation(0, 0, -3),
+        M4.multiply(M4.rotationX(-Math.PI / 2), M4.scaling(12, 14, 1))
+      );
+      drawSolidQuad(vp, floorModel, th.floor[0], th.floor[1], th.floor[2], 1.0);
+
+      gl.useProgram(colorProg);
+      gl.uniformMatrix4fv(uColorMVP, false, vp);
+      gl.uniform4f(uColorVal, th.grid[0], th.grid[1], th.grid[2], 1.0);
+      gl.bindVertexArray(roomGridVAO);
+      gl.drawArrays(gl.LINES, 0, roomGridVertCount);
+    }
+
+    // 2. Physical Snellen Lightbox + Exact Vector Optotypes
+    const scale = state.appliedScale;
+    const chartBase = M4.multiply(
+      M4.trsYPR(state.chartAnchorPos, state.chartAnchorYaw, 0),
+      M4.scaling(scale, scale, 1.0)
+    );
+    const bw = currentLayout.boardWidth;
+    const bh = currentLayout.boardHeight;
+    const bezel = Math.max(0.018, bw * 0.035);
+
+    // Dark anodized lightbox bezel behind white translucent screen
+    const bezelModel = M4.multiply(
+      chartBase,
+      M4.multiply(M4.translation(0, 0, -0.004), M4.scaling(bw + bezel * 2, bh + bezel * 2, 1))
+    );
+    drawSolidQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
+
+    // Pure calibrated matte white illuminated chart surface at local z = 0
+    const whiteModel = M4.multiply(chartBase, M4.scaling(bw, bh, 1));
+    drawSolidQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
+
+    // Planar overlays on chart surface (polygonOffset guarantees zero z-fighting at any distance)
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+
+    // Active row subtle indicator + Snellen green/red clinical bars
+    gl.polygonOffset(-1.0, -1.0);
+    for (const rl of currentLayout.rowLayouts) {
+      if (rl.originalIdx === currentLayout.activeRowIdx && state.layoutMode === 'full') {
+        const hlModel = M4.multiply(
+          chartBase,
+          M4.multiply(M4.translation(0, rl.centerY, 0.0002), M4.scaling(bw * 0.95, rl.height * 1.38, 1))
+        );
+        drawSolidQuad(vp, hlModel, 0.23, 0.51, 0.96, 0.10);
+      }
+      if (rl.row.barColor && state.layoutMode === 'full') {
+        const [cr, cg, cb] = rl.row.barColor;
+        const barH = Math.max(0.0015, rl.height * 0.14);
+        const barModel = M4.multiply(
+          chartBase,
+          M4.multiply(
+            M4.translation(0, rl.centerY - rl.height * 0.68, 0.0003),
+            M4.scaling(rl.rowWidth * 1.08, barH, 1)
+          )
+        );
+        drawSolidQuad(vp, barModel, cr, cg, cb, 1.0);
+      }
+    }
+
+    // Target optotype blue underline pointer during active scored exam
+    if (state.exam && state.exam.status === 'active') {
+      const targetOp = currentLayout.optotypes.find(
+        op => op.rowIdx === state.exam.rowIdx && op.colIdx === state.exam.colIdx
+      );
+      if (targetOp) {
+        const ptrW = Math.max(0.005, targetOp.size * 1.15);
+        const ptrH = Math.max(0.0022, targetOp.size * 0.18);
+        const ptrY = targetOp.cy - Math.max(targetOp.size * 0.76, 0.0045);
+        const ptrModel = M4.multiply(
+          chartBase,
+          M4.multiply(M4.translation(targetOp.cx, ptrY, 0.00035), M4.scaling(ptrW, ptrH, 1))
+        );
+        drawSolidQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
+      }
+    }
+
+    // Margin acuity labels (20/20, 6/6, LogMAR)
+    gl.polygonOffset(-2.0, -2.0);
+    const labelModel = M4.multiply(
+      chartBase,
+      M4.multiply(M4.translation(0, 0, 0.0004), M4.scaling(bw, bh, 1))
+    );
+    drawTexturedQuad(vp, labelModel, marginLabelLayer.tex, 1.0);
+
+    // Razor-sharp vector 5x5 optotype mesh (pure black, MSAA antialiased)
+    gl.polygonOffset(-3.0, -3.0);
+    const optModel = M4.multiply(chartBase, M4.translation(0, 0, 0.0006));
+    gl.useProgram(colorProg);
+    gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, optModel));
+    gl.uniform4f(uColorVal, 0.045, 0.05, 0.06, 1.0);
+    gl.bindVertexArray(chartOptotypesVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, chartOptotypesVertCount);
+
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+
+    // 3. Floating 3D VR Control Console
+    const panelBackModel = M4.multiply(
+      M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch),
+      M4.multiply(M4.translation(0, 0, -0.003), M4.scaling(PANEL_WIDTH_M + 0.012, PANEL_HEIGHT_M + 0.012, 1))
+    );
+    drawSolidQuad(vp, panelBackModel, 0.07, 0.09, 0.14, 0.95);
+
+    const panelFrontModel = M4.multiply(
+      M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch),
+      M4.scaling(PANEL_WIDTH_M, PANEL_HEIGHT_M, 1)
+    );
+    drawTexturedQuad(vp, panelFrontModel, vrPanelLayer.tex, 1.0);
+
+    // 4. XR Controller Laser Rays & Hit Cursor
+    for (const ctrl of controllers) {
+      const len = ctrl.hit ? ctrl.hit.t : 2.5;
+      // Thin ray beam from controller origin along rayDir
+      const rayVerts = new Float32Array([
+        ctrl.origin[0], ctrl.origin[1], ctrl.origin[2],
+        ctrl.origin[0] + ctrl.dir[0] * len,
+        ctrl.origin[1] + ctrl.dir[1] * len,
+        ctrl.origin[2] + ctrl.dir[2] * len
+      ]);
+      gl.useProgram(colorProg);
+      gl.uniformMatrix4fv(uColorMVP, false, vp);
+      gl.uniform4f(uColorVal, 0.38, 0.68, 1.0, 0.9);
+      const tmpBuf = gl.createBuffer();
+      gl.bindVertexArray(null);
+      gl.bindBuffer(gl.ARRAY_BUFFER, tmpBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, rayVerts, gl.STREAM_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.LINES, 0, 2);
+      gl.deleteBuffer(tmpBuf);
+
+      if (ctrl.hit) {
+        const dotModel = M4.multiply(
+          M4.trsYPR(ctrl.hit.worldHit, state.chartAnchorYaw, state.panelPitch),
+          M4.multiply(M4.translation(0, 0, 0.002), M4.scaling(0.012, 0.012, 1))
+        );
+        drawSolidQuad(vp, dotModel, 0.25, 0.85, 1.0, 1.0);
+      }
+    }
+  }
+
+  function updateEyeDistanceMetrics(activeEyeWorldPos) {
+    state.eyePos = activeEyeWorldPos;
+    const dx = activeEyeWorldPos[0] - state.chartAnchorPos[0];
+    const dy = activeEyeWorldPos[1] - state.chartAnchorPos[1];
+    const dz = activeEyeWorldPos[2] - state.chartAnchorPos[2];
+    const dist = Math.max(0.25, Math.hypot(dx, dy, dz));
+    const prevDist = state.liveEyeDistance;
+    state.liveEyeDistance = dist;
+
+    if (state.lockAngularSize) {
+      state.appliedScale = Math.max(0.18, Math.min(6.0, dist / state.targetDistance));
+    } else {
+      state.appliedScale = 1.0;
+    }
+
+    if (Math.abs(dist - prevDist) > 0.01) {
+      panelDirty = true;
+      refreshLiveMetricReadouts();
+    }
+  }
+
+  // ==========================================================================
+  // Desktop 3D Preview Loop + Mouse Interaction with 3D VR Console
+  // ==========================================================================
+  let isDragging = false;
+  let lastMouseX = 0, lastMouseY = 0;
+  let dragMoved = false;
+  let desktopHoveredBtn = null;
+
+  function computeDesktopCamera() {
+    const leanZ = state.simDistOffset;
+    const eye = [0, 1.60, leanZ];
+    const camWorld = M4.trsYPR(eye, state.orbitYaw, state.orbitPitch);
+    const viewMatrix = M4.invertRigid(camWorld);
+    const aspect = Math.max(0.2, glCanvas.width / Math.max(1, glCanvas.height));
+    const projMatrix = M4.perspective(50 * SnellenCore.DEG_TO_RAD, aspect, 0.08, 35.0);
+    return { eye, camWorld, viewMatrix, projMatrix };
+  }
+
+  function screenRayFromMouse(clientX, clientY) {
+    const rect = glCanvas.getBoundingClientRect();
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = 1 - ((clientY - rect.top) / rect.height) * 2;
+    const { eye, camWorld, projMatrix } = computeDesktopCamera();
+    const localDir = [ndcX / projMatrix[0], ndcY / projMatrix[5], -1];
+    const len = Math.hypot(localDir[0], localDir[1], localDir[2]);
+    const worldDir = M4.transformDir(camWorld, [localDir[0] / len, localDir[1] / len, localDir[2] / len]);
+    return { origin: eye, dir: worldDir };
+  }
+
+  glCanvas.addEventListener('mousedown', e => {
+    isDragging = true;
+    dragMoved = false;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (state.viewMode !== '3d' || state.xrSession) return;
+    if (isDragging) {
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+      if (Math.hypot(dx, dy) > 3) dragMoved = true;
+      state.orbitYaw -= dx * 0.0035;
+      state.orbitPitch = Math.max(-1.1, Math.min(1.1, state.orbitPitch - dy * 0.0035));
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    } else {
+      const ray = screenRayFromMouse(e.clientX, e.clientY);
+      const hit = intersectRayWithPanel(ray.origin, ray.dir);
+      desktopHoveredBtn = hit && hit.btn ? hit.btn : null;
+      glCanvas.style.cursor = desktopHoveredBtn ? 'pointer' : 'grab';
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDragging && !dragMoved && desktopHoveredBtn && state.viewMode === '3d' && !state.xrSession) {
+      desktopHoveredBtn.action();
+    }
+    isDragging = false;
+  });
+
+  glCanvas.addEventListener('wheel', e => {
+    if (state.viewMode !== '3d' || state.xrSession) return;
+    e.preventDefault();
+    state.simDistOffset = Math.max(-state.targetDistance + 0.35, Math.min(4.0, state.simDistOffset + e.deltaY * 0.0012));
+  }, { passive: false });
+
+  function renderDesktopFrame() {
+    if (state.xrSession) return;
+    requestAnimationFrame(renderDesktopFrame);
+    if (state.viewMode !== '3d' || !gl) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const rect = glCanvas.getBoundingClientRect();
+    const w = Math.max(2, Math.round(rect.width * dpr));
+    const h = Math.max(2, Math.round(rect.height * dpr));
+    if (glCanvas.width !== w || glCanvas.height !== h) {
+      glCanvas.width = w;
+      glCanvas.height = h;
+    }
+
+    const { eye, viewMatrix, projMatrix } = computeDesktopCamera();
+    updateEyeDistanceMetrics(eye);
+    renderVRControlPanel(desktopHoveredBtn ? desktopHoveredBtn.id : null);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    renderEyeView(projMatrix, viewMatrix, 'none', [], false);
+  }
+
+  // ==========================================================================
+  // WebXR Session Management (VR + AR Passthrough + Controllers + Hand/Gaze)
+  // ==========================================================================
+  let xrRefSpace = null;
+  const prevButtonStates = new Map();
+  let stickCooldownUntil = 0;
+
+  async function initWebXRSupport() {
+    const badge = document.getElementById('xrStatusBadge');
+    const btnVR = document.getElementById('btnEnterVR');
+    const btnAR = document.getElementById('btnEnterAR');
+
+    if (!window.isSecureContext) {
+      document.getElementById('secureWarning').style.display = 'block';
+    }
+
+    if (!navigator.xr) {
+      badge.textContent = '2D / 3D Ready (No XR)';
+      return;
+    }
+
+    try {
+      const [vrOk, arOk] = await Promise.all([
+        navigator.xr.isSessionSupported('immersive-vr').catch(() => false),
+        navigator.xr.isSessionSupported('immersive-ar').catch(() => false)
+      ]);
+      btnVR.disabled = !vrOk;
+      btnAR.disabled = !arOk;
+      if (vrOk || arOk) {
+        badge.textContent = vrOk && arOk ? 'VR + AR Ready' : (vrOk ? 'WebXR VR Ready' : 'WebXR AR Ready');
+      } else {
+        badge.textContent = 'Desktop Preview';
+      }
+    } catch {
+      badge.textContent = 'Desktop Preview';
+    }
+  }
+
+  async function startXR(mode) {
+    if (!navigator.xr || state.xrSession) return;
+    try {
+      const session = await navigator.xr.requestSession(mode, {
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+      });
+      state.xrSession = session;
+      state.xrMode = mode;
+      state.needsRecenterInXR = true;
+
+      await gl.makeXRCompatible();
+      const nativeScale = (typeof XRWebGLLayer.getNativeFramebufferScaleFactor === 'function')
+        ? XRWebGLLayer.getNativeFramebufferScaleFactor(session)
+        : 1.0;
+
+      const baseLayer = new XRWebGLLayer(session, gl, {
+        antialias: true,
+        alpha: mode === 'immersive-ar',
+        framebufferScaleFactor: nativeScale
+      });
+
+      session.updateRenderState({
+        baseLayer,
+        depthNear: 0.12,
+        depthFar: 30.0
+      });
+
+      try {
+        xrRefSpace = await session.requestReferenceSpace('local-floor');
+      } catch {
+        xrRefSpace = await session.requestReferenceSpace('local');
+      }
+
+      session.addEventListener('select', e => {
+        if (!xrRefSpace) return;
+        const rayPose = e.frame.getPose(e.inputSource.targetRaySpace, xrRefSpace);
+        if (rayPose) {
+          const m = rayPose.transform.matrix;
+          const origin = [m[12], m[13], m[14]];
+          const dir = [-m[8], -m[9], -m[10]];
+          const hit = intersectRayWithPanel(origin, dir);
+          if (hit && hit.btn) {
+            hit.btn.action();
+            return;
+          }
+        }
+        // Trigger away from UI panel = quick shuffle (when not inside a scored exam)
+        if (!state.exam || state.exam.status !== 'active') {
+          cycleChart();
+        }
+      });
+
+      session.addEventListener('squeeze', () => {
+        state.needsRecenterInXR = true;
+      });
+
+      session.addEventListener('end', () => {
+        state.xrSession = null;
+        state.xrMode = null;
+        state.hmdPPD = null;
+        xrRefSpace = null;
+        document.getElementById('btnEnterVR').textContent = 'Enter VR';
+        requestAnimationFrame(renderDesktopFrame);
+      });
+
+      document.getElementById('btnEnterVR').textContent = 'In XR Session';
+      session.requestAnimationFrame(onXRFrame);
+    } catch (err) {
+      console.error('Failed to start WebXR session:', err);
+      alert('Could not start WebXR session: ' + err.message);
+    }
+  }
+
+  function pollXRGamepads(session, nowMs) {
+    for (const src of session.inputSources) {
+      if (!src.gamepad) continue;
+      const gp = src.gamepad;
+      const key = src.handedness || 'none';
+      const prev = prevButtonStates.get(key) || [];
+      const inActiveExam = !!(state.exam && state.exam.status === 'active');
+
+      // Button 4 (A/X) = Skip in Exam or Cycle Chart; Button 5 (B/Y) = Cycle Eye Occluder
+      const aPressed = gp.buttons[4] && gp.buttons[4].pressed;
+      const bPressed = gp.buttons[5] && gp.buttons[5].pressed;
+      if (aPressed && !prev[4]) {
+        if (inActiveExam) submitExamAnswer('SKIP');
+        else cycleChart();
+      }
+      if (bPressed && !prev[5]) {
+        const order = ['OU', 'OD', 'OS'];
+        setEyeMode(order[(order.indexOf(state.eyeMode) + 1) % order.length]);
+      }
+      prevButtonStates.set(key, gp.buttons.map(b => b.pressed));
+
+      // Thumbstick navigation (or directional answer input during Tumbling E / Landolt C exam!)
+      if (nowMs > stickCooldownUntil && gp.axes.length >= 4) {
+        const axX = gp.axes[2];
+        const axY = gp.axes[3];
+        if (inActiveExam && (state.chartTypeId === 'tumbling_e' || (state.chartTypeId === 'landolt_c' && !state.landolt8))) {
+          if (Math.hypot(axX, axY) > 0.68) {
+            if (Math.abs(axX) > Math.abs(axY)) {
+              submitExamAnswer(axX > 0 ? 0 : 180);
+            } else {
+              submitExamAnswer(axY < 0 ? 90 : 270); // xr-standard: -Y is forward/up
+            }
+            stickCooldownUntil = nowMs + 340;
+          }
+        } else if (!inActiveExam) {
+          if (Math.abs(axY) > 0.65) {
+            stepActiveRow(axY > 0 ? 1 : -1);
+            stickCooldownUntil = nowMs + 260;
+          } else if (Math.abs(axX) > 0.65) {
+            const ids = Object.keys(SnellenCore.CHART_TYPES);
+            const next = ids[(ids.indexOf(state.chartTypeId) + (axX > 0 ? 1 : ids.length - 1)) % ids.length];
+            setChartType(next);
+            stickCooldownUntil = nowMs + 320;
+          }
+        }
+      }
+    }
+  }
+
+  function onXRFrame(time, frame) {
+    const session = frame.session;
+    session.requestAnimationFrame(onXRFrame);
+    const pose = frame.getViewerPose(xrRefSpace);
+    if (!pose) return;
+
+    pollXRGamepads(session, time);
+
+    // Determine exact world position of active eye(s) for accurate Snellen angular subtense
+    let activeEyePos = [
+      pose.transform.position.x,
+      pose.transform.position.y,
+      pose.transform.position.z
+    ];
+    const leftView = pose.views.find(v => v.eye === 'left');
+    const rightView = pose.views.find(v => v.eye === 'right');
+
+    if (state.eyeMode === 'OD' && rightView) {
+      const p = rightView.transform.position;
+      activeEyePos = [p.x, p.y, p.z];
+    } else if (state.eyeMode === 'OS' && leftView) {
+      const p = leftView.transform.position;
+      activeEyePos = [p.x, p.y, p.z];
+    } else if (leftView && rightView) {
+      activeEyePos = [
+        0.5 * (leftView.transform.position.x + rightView.transform.position.x),
+        0.5 * (leftView.transform.position.y + rightView.transform.position.y),
+        0.5 * (leftView.transform.position.z + rightView.transform.position.z)
+      ];
+    }
+
+    if (state.needsRecenterInXR) {
+      state.eyePos = activeEyePos;
+      const m = pose.transform.matrix;
+      // Extract horizontal forward yaw from viewer transform (-Z axis projected on XZ)
+      const fwdX = -m[8];
+      const fwdZ = -m[10];
+      const yaw = Math.atan2(-fwdX, -fwdZ);
+      recenterChart(yaw);
+      state.needsRecenterInXR = false;
+    }
+
+    updateEyeDistanceMetrics(activeEyePos);
+
+    // Collect controller / hand / transient-pointer rays
+    const controllers = [];
+    let hoveredBtnId = null;
+    for (const src of session.inputSources) {
+      if (!src.targetRaySpace) continue;
+      const rayPose = frame.getPose(src.targetRaySpace, xrRefSpace);
+      if (!rayPose) continue;
+      const m = rayPose.transform.matrix;
+      const origin = [m[12], m[13], m[14]];
+      const dir = [-m[8], -m[9], -m[10]];
+      const hit = intersectRayWithPanel(origin, dir);
+      if (hit && hit.btn && !hoveredBtnId) hoveredBtnId = hit.btn.id;
+      if (src.targetRayMode === 'tracked-pointer') {
+        controllers.push({ origin, dir, hit });
+      }
+    }
+
+    const glLayer = session.renderState.baseLayer;
+    if (pose.views.length > 0) {
+      const vp0 = glLayer.getViewport(pose.views[0]);
+      const estPPD = SnellenCore.estimateHmdPPD(pose.views[0].projectionMatrix, vp0.width);
+      if (estPPD && (!state.hmdPPD || Math.abs(estPPD - state.hmdPPD) > 0.5)) {
+        state.hmdPPD = estPPD;
+        panelDirty = true;
+      }
+    }
+
+    renderVRControlPanel(hoveredBtnId);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
+    const isAR = state.xrMode === 'immersive-ar';
+    for (const view of pose.views) {
+      const viewport = glLayer.getViewport(view);
+      gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+      renderEyeView(view.projectionMatrix, view.transform.inverse.matrix, view.eye, controllers, isAR);
+    }
+  }
+
+  // ==========================================================================
+  // DOM Sidebar Wiring & Live Telemetry
+  // ==========================================================================
+  function refreshLiveMetricReadouts() {
+    const row = state.chartData.rows[Math.min(state.activeRowIdx, state.chartData.rows.length - 1)];
+    document.getElementById('valAcuity').textContent = `${row.label} (${row.metric})`;
+
+    const effectiveDist = state.viewMode === '2d'
+      ? state.targetDistance
+      : (state.lockAngularSize ? state.liveEyeDistance : state.targetDistance);
+    const h2020mm = SnellenCore.optotypeHeightMeters(effectiveDist, 1.0) * 1000;
+    document.getElementById('val2020Height').textContent = `${h2020mm.toFixed(2)} mm`;
+
+    const distM = state.viewMode === '2d' ? state.targetDistance : state.liveEyeDistance;
+    document.getElementById('valLiveDist').textContent = `${distM.toFixed(2)} m (${(distM / 0.3048).toFixed(1)} ft)`;
+
+    const actual2020H = SnellenCore.optotypeHeightMeters(state.targetDistance, 1.0) * state.appliedScale;
+    const arcmin = state.viewMode === '2d'
+      ? 5.0
+      : SnellenCore.subtendedArcmin(actual2020H, state.liveEyeDistance);
+    const exactTag = Math.abs(arcmin - 5.0) < 0.05 ? 'Exact' : `${((5.0 / arcmin) * 100).toFixed(0)}%`;
+    document.getElementById('valSubtense').textContent = `${arcmin.toFixed(2)}′ (${exactTag})`;
+  }
+
+  function updateSidebarUI() {
+    document.getElementById('cycleCounter').textContent = `#${state.cycleCount}`;
+    document.getElementById('selChartType').value = state.chartTypeId;
+    document.getElementById('landoltDirsRow').style.display = state.chartTypeId === 'landolt_c' ? 'grid' : 'none';
+    document.getElementById('btnLandolt4').classList.toggle('active', !state.landolt8);
+    document.getElementById('btnLandolt8').classList.toggle('active', state.landolt8);
+
+    document.querySelectorAll('[data-layout]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.layout === state.layoutMode);
+    });
+    document.querySelectorAll('[data-eye]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.eye === state.eyeMode);
+    });
+
+    document.getElementById('chkLockAngle').checked = state.lockAngularSize;
+    const themeNames = ['Room: Dim Clinic', 'Room: Dark Room', 'Room: Bright Clinic'];
+    document.getElementById('btnEnvTheme').textContent = themeNames[state.envTheme];
+
+    refreshLiveMetricReadouts();
+
+    // Scored Acuity Exam Sidebar Controls & Scorecard
+    const btnStart = document.getElementById('btnStartExam');
+    const btnVoice = document.getElementById('btnToggleVoice');
+    const voicePill = document.getElementById('voiceStatusPill');
+    const activeWrap = document.getElementById('examActiveControls');
+    const keypadGrid = document.getElementById('examKeypadGrid');
+    const promptTxt = document.getElementById('examPromptText');
+    const phaseBadge = document.getElementById('examPhaseBadge');
+    const resBanner = document.getElementById('examResultBanner');
+
+    btnVoice.textContent = state.voiceEnabled ? '🎤 Voice: ON' : '🎤 Voice: Off';
+    btnVoice.classList.toggle('active', state.voiceEnabled);
+    voicePill.style.display = (state.voiceEnabled || state.voiceStatusText !== 'Mic off') ? 'block' : 'none';
+    voicePill.textContent = state.voiceStatusText;
+    voicePill.classList.toggle('listening', state.voiceListening);
+
+    ['OD', 'OS', 'OU'].forEach(eyeKey => {
+      const el = document.getElementById(`score${eyeKey}`);
+      el.textContent = state.scores[eyeKey] ? state.scores[eyeKey].snellen : '—';
+    });
+
+    if (state.exam && state.exam.status === 'active') {
+      btnStart.textContent = '↻ Restart Exam';
+      const curRow = state.chartData.rows[state.exam.rowIdx];
+      phaseBadge.textContent = state.exam.phase === 'screening'
+        ? `Screening ${curRow.label}`
+        : `Threshold ${state.exam.trialInRow + 1}/5`;
+      activeWrap.style.display = 'flex';
+      resBanner.style.display = 'none';
+      promptTxt.textContent = state.exam.phase === 'screening'
+        ? `Read the blue-underlined optotype (${curRow.label}):`
+        : `Verify ${curRow.label} (${state.exam.trialInRow + 1} of 5):`;
+
+      const choices = SnellenCore.getExamChoices(state.chartTypeId, state.landolt8);
+      keypadGrid.className = choices.length === 4 ? 'keypad-grid dirs-4' : 'keypad-grid';
+      keypadGrid.innerHTML = '';
+      for (const ch of choices) {
+        const b = document.createElement('button');
+        b.className = 'btn keypad-btn';
+        b.textContent = ch.label;
+        b.addEventListener('click', () => submitExamAnswer(ch.token));
+        keypadGrid.appendChild(b);
+      }
+    } else if (state.exam && state.exam.status === 'complete' && state.exam.result) {
+      btnStart.textContent = '▶ New Exam';
+      phaseBadge.textContent = 'Scored';
+      activeWrap.style.display = 'none';
+      resBanner.style.display = 'block';
+      const res = state.exam.result;
+      const sign = res.logMAR >= 0 ? '+' : '';
+      const hmdNote = (state.hmdPPD && res.passedRowIdx >= 0 && state.chartData.rows[res.passedRowIdx].denom <= SnellenCore.nyquistSnellenDenom(state.hmdPPD) + 10)
+        ? `<br/><span style="color:#fde68a;">Note: Near HMD pixel ceiling (~${state.hmdPPD.toFixed(0)} PPD).</span>`
+        : '';
+      resBanner.innerHTML =
+        `<strong>${res.eyeMode} Acuity: ${res.snellen}</strong> (${res.metric})<br/>` +
+        `LogMAR: <strong>${sign}${res.logMAR.toFixed(2)}</strong> • Decimal: <strong>${res.decimal.toFixed(2)}</strong> (${res.totalPrompts} trials)${hmdNote}`;
+    } else {
+      btnStart.textContent = '▶ Start Exam';
+      phaseBadge.textContent = 'Ready';
+      activeWrap.style.display = 'none';
+      resBanner.style.display = 'none';
+    }
+
+    // Examiner answer key (auto-masked while solo user is taking an exam unless re-toggled)
+    const ansBox = document.getElementById('answerKeyBox');
+    const examRunning = !!(state.exam && state.exam.status === 'active');
+    ansBox.style.display = state.showAnswers ? 'block' : 'none';
+    if (state.showAnswers) {
+      if (examRunning) {
+        ansBox.innerHTML = '<div style="color:#94a3b8; font-style:italic;">Hidden during active exam to prevent memorization leaks.</div>';
+      } else {
+        ansBox.innerHTML = state.chartData.rows.map((r, idx) => {
+          const cls = idx === state.activeRowIdx ? 'answer-row current' : 'answer-row';
+          const seq = r.items.map(it => it.display).join(' ');
+          return `<div class="${cls}">${r.label.padEnd(7, ' ')} │ ${seq}</div>`;
+        }).join('');
+      }
+    }
+  }
+
+  // Event Listeners
+  document.getElementById('btnEnterVR').addEventListener('click', () => startXR('immersive-vr'));
+  document.getElementById('btnEnterAR').addEventListener('click', () => startXR('immersive-ar'));
+
+  function setViewportMode(mode) {
+    state.viewMode = mode;
+    document.getElementById('btnView3D').classList.toggle('active', mode === '3d');
+    document.getElementById('btnView2D').classList.toggle('active', mode === '2d');
+    glCanvas.style.display = mode === '3d' ? 'block' : 'none';
+    canvas2d.style.display = mode === '2d' ? 'block' : 'none';
+    document.getElementById('btnCalib2D').style.display = mode === '2d' ? 'inline-block' : 'none';
+    document.getElementById('btnEnvTheme').style.display = mode === '3d' ? 'inline-block' : 'none';
+    document.getElementById('viewportHintPill').innerHTML = mode === '3d'
+      ? 'Drag to look • Scroll to lean • Click 3D console or press <strong>Space</strong> to shuffle'
+      : '2D Calibrated Mode • Click <strong>Calibrate Screen</strong> to match physical monitor DPI';
+    if (mode === '2d') render2DChart();
+    refreshLiveMetricReadouts();
+  }
+
+  document.getElementById('btnView3D').addEventListener('click', () => setViewportMode('3d'));
+  document.getElementById('btnView2D').addEventListener('click', () => setViewportMode('2d'));
+
+  document.getElementById('selChartType').addEventListener('change', e => setChartType(e.target.value));
+  document.getElementById('btnLandolt4').addEventListener('click', () => { state.landolt8 = false; cycleChart(); });
+  document.getElementById('btnLandolt8').addEventListener('click', () => { state.landolt8 = true; cycleChart(); });
+  document.getElementById('btnCycle').addEventListener('click', () => cycleChart(false));
+  document.getElementById('btnClassicPreset').addEventListener('click', () => {
+    state.chartTypeId = 'snellen';
+    cycleChart(true);
+  });
+
+  document.querySelectorAll('[data-layout]').forEach(btn => {
+    btn.addEventListener('click', () => setLayoutMode(btn.dataset.layout));
+  });
+  document.getElementById('btnRowUp').addEventListener('click', () => stepActiveRow(-1));
+  document.getElementById('btnRowDown').addEventListener('click', () => stepActiveRow(1));
+
+  document.getElementById('selDistance').addEventListener('change', e => setTargetDistance(parseFloat(e.target.value)));
+  document.getElementById('chkLockAngle').addEventListener('change', e => setLockAngle(e.target.checked));
+  document.getElementById('btnRecenter').addEventListener('click', () => {
+    if (state.xrSession) state.needsRecenterInXR = true;
+    else {
+      state.orbitYaw = 0;
+      state.orbitPitch = 0;
+      recenterChart(0);
+    }
+  });
+  document.getElementById('btnEnvTheme').addEventListener('click', cycleEnvTheme);
+
+  document.querySelectorAll('[data-eye]').forEach(btn => {
+    btn.addEventListener('click', () => setEyeMode(btn.dataset.eye));
+  });
+
+  document.getElementById('chkShowAnswers').addEventListener('change', e => {
+    state.showAnswers = e.target.checked;
+    updateSidebarUI();
+  });
+
+  // Scored Acuity Exam & Voice DOM Listeners
+  document.getElementById('btnStartExam').addEventListener('click', () => startExam());
+  document.getElementById('btnToggleVoice').addEventListener('click', () => toggleVoiceInput());
+  document.getElementById('btnExamSkip').addEventListener('click', () => submitExamAnswer('SKIP'));
+  document.getElementById('btnCancelExam').addEventListener('click', () => cancelExam());
+
+  // 2D Credit-Card Calibration Modal
+  const calibModal = document.getElementById('calibModal');
+  const rngPxPerMm = document.getElementById('rngPxPerMm');
+  document.getElementById('btnCalib2D').addEventListener('click', () => {
+    calibModal.style.display = 'flex';
+  });
+  document.getElementById('btnCloseCalib').addEventListener('click', () => {
+    calibModal.style.display = 'none';
+  });
+  rngPxPerMm.addEventListener('input', e => {
+    state.pxPerMm = parseFloat(e.target.value);
+    const cardPx = Math.round(85.60 * state.pxPerMm);
+    document.getElementById('cardBar').style.width = `${cardPx}px`;
+    const dpi = state.pxPerMm * 25.4;
+    document.getElementById('lblCalibReadout').textContent = `Scale: ${state.pxPerMm.toFixed(2)} CSS px/mm (${dpi.toFixed(1)} DPI)`;
+    render2DChart();
+  });
+
+  window.addEventListener('resize', () => {
+    if (state.viewMode === '2d') render2DChart();
+  });
+
+  // Keyboard shortcuts (works in 2D, 3D preview, PCVR, AND active Scored Exams!)
+  window.addEventListener('keydown', e => {
+    if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+    // When a Scored Exam is active, capture letter/digit/arrow/skip answers directly!
+    if (state.exam && state.exam.status === 'active') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelExam();
+        return;
+      }
+      if (e.key === 'Backspace' || e.key === '?' || e.key === '/' || e.code === 'Space') {
+        e.preventDefault();
+        submitExamAnswer('SKIP');
+        return;
+      }
+      const arrowMap = { ArrowRight: 0, ArrowUp: 90, ArrowLeft: 180, ArrowDown: 270 };
+      if (Object.prototype.hasOwnProperty.call(arrowMap, e.key)) {
+        const valid = SnellenCore.getExamChoices(state.chartTypeId, state.landolt8).some(c => c.token === arrowMap[e.key]);
+        if (valid) {
+          e.preventDefault();
+          submitExamAnswer(arrowMap[e.key]);
+          return;
+        }
+      }
+      const upper = e.key.toUpperCase();
+      const validChar = SnellenCore.getExamChoices(state.chartTypeId, state.landolt8).some(c => c.token === upper);
+      if (validChar) {
+        e.preventDefault();
+        submitExamAnswer(upper);
+        return;
+      }
+    }
+
+    const k = e.key.toLowerCase();
+    if (e.code === 'Space' || k === 'r') {
+      e.preventDefault();
+      cycleChart(false);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      stepActiveRow(-1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      stepActiveRow(1);
+    } else if (k >= '1' && k <= '6') {
+      const ids = ['snellen', 'etdrs', 'tumbling_e', 'landolt_c', 'hotv', 'numbers'];
+      setChartType(ids[parseInt(k, 10) - 1]);
+    } else if (k === 'e') {
+      const order = ['OU', 'OD', 'OS'];
+      setEyeMode(order[(order.indexOf(state.eyeMode) + 1) % order.length]);
+    } else if (k === 'm') {
+      const modes = ['full', 'line', 'single'];
+      setLayoutMode(modes[(modes.indexOf(state.layoutMode) + 1) % modes.length]);
+    } else if (k === 'l') {
+      setLockAngle(!state.lockAngularSize);
+    } else if (k === 'c') {
+      if (state.xrSession) state.needsRecenterInXR = true;
+      else {
+        state.orbitYaw = 0;
+        state.orbitPitch = 0;
+        recenterChart(0);
+      }
+    }
+  });
+
+  // Expose state hook for automated diagnostics/tests
+  window.__SnellenApp = {
+    state,
+    cycleChart,
+    setChartType,
+    setLayoutMode,
+    setTargetDistance,
+    setEyeMode,
+    setViewportMode,
+    startXR,
+    startExam,
+    submitExamAnswer,
+    cancelExam,
+    toggleVoiceInput
+  };
+
+  // Boot
+  recenterChart(0);
+  rebuildChartGeometry();
+  initWebXRSupport();
+  requestAnimationFrame(renderDesktopFrame);
+})();
+</script>
+</body>
+</html>

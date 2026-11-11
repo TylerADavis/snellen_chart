@@ -1,0 +1,11 @@
+{
+  "name": "webxr-snellen-chart",
+  "version": "1.0.0",
+  "description": "Self-contained WebXR & calibrated 2D clinical Snellen / ETDRS / Tumbling E / Landolt C visual acuity chart with exact 5-arcminute angular sizing.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node tests/snellen.test.mjs && node tests/xr_runtime.test.mjs"
+  },
+  "license": "MIT"
+}
