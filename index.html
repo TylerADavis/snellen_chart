@@ -399,16 +399,34 @@
         <span>Optical Distance &amp; True Size</span>
       </div>
       <select id="selDistance" aria-label="Chart Distance">
-        <option value="6.096">20 ft (6.096 m) — Standard Snellen</option>
-        <option value="4.000">4.0 m (13.1 ft) — Clinical ETDRS</option>
-        <option value="2.000">2.0 m (6.6 ft) — VR Focal Match (2m)</option>
-        <option value="1.500" selected>1.5 m (4.9 ft) — VR Focal Match (1.5m)</option>
-        <option value="1.300">1.3 m (4.3 ft) — Quest 3 Focal Plane</option>
+        <option value="6.096">20 ft (6.096 m) — Standard Snellen (~0.16 D)</option>
+        <option value="4.000">4.0 m (13.1 ft) — XREAL Aura / ETDRS (0.25 D)</option>
+        <option value="3.000">3.0 m (9.8 ft) — XREAL Birdbath / OST (0.33 D)</option>
+        <option value="2.000">2.0 m (6.6 ft) — PCVR / Quest 2 (0.50 D)</option>
+        <option value="1.500" selected>1.5 m (4.9 ft) — Mid VR Focal Plane (0.67 D)</option>
+        <option value="1.300">1.3 m (4.3 ft) — Meta Quest 3 / Pro (0.77 D)</option>
+        <option value="0.900">0.9 m (3.0 ft) — Samsung Moohan / Galaxy XR (1.11 D)</option>
+        <option value="custom">Custom Focal Distance (m)…</option>
       </select>
+
+      <div id="customDistRow" style="display:none;" class="grid-2">
+        <input type="number" id="inpCustomDist" min="0.4" max="10.0" step="0.05" value="0.90" aria-label="Custom Distance Meters" />
+        <button class="btn" id="btnApplyCustomDist">Apply (m)</button>
+      </div>
 
       <label class="toggle" title="Continuously scales chart to your live eye-to-chart distance so 20/20 ALWAYS subtends 5.00 arcminutes even if you lean">
         <span>Lock 5′ Angular Size (Lean-Proof)</span>
         <input type="checkbox" id="chkLockAngle" checked />
+      </label>
+
+      <label class="toggle" title="Luminous white optotypes on dark/transparent background — ideal for Optical See-Through (OST) AR glasses like XREAL Aura where black is transparent">
+        <span>OST Dark Mode (XREAL Aura / Additive AR)</span>
+        <input type="checkbox" id="chkInvertPolarity" />
+      </label>
+
+      <label class="toggle" title="Click 3D console buttons hands-free by holding eye/head gaze on a button for 1.1 seconds">
+        <span>Eye / Head Gaze Dwell-Click (1.1s)</span>
+        <input type="checkbox" id="chkGazeDwell" />
       </label>
 
       <div class="grid-2">
@@ -437,7 +455,7 @@
       </div>
 
       <div class="warn-box" id="opticsNote">
-        <strong>VR Focal Plane Note:</strong> Fixed-focus HMD lenses (~1.3–2.0 m) set optical accommodation at ~0.5–0.75 D, and headset PPD (~25 PPD on Quest 3 ≈ 20/48 Nyquist) bounds the finest resolvable row. Placing the chart at 1.3–1.5 m eliminates vergence-accommodation conflict while preserving exact 5′ angular sizing.
+        <strong>Device Focal Planes:</strong> Samsung <strong>Moohan</strong> focuses closer (~0.9 m / 1.11 D, ~35 PPD), Quest 3 at ~1.3 m, and <strong>XREAL Aura</strong> OST optics collimate far (~3.0–4.0 m; use <em>OST Dark Mode</em> so additive waveguides render luminous crisp optotypes without background glare).
       </div>
     </div>
 
@@ -1555,6 +1573,8 @@ if (typeof window !== 'undefined') {
     cycleCount: 1,
     targetDistance: 1.5,     // meters (default 1.5m VR focal plane match)
     lockAngularSize: true,   // auto-compensate live eye distance so 20/20 === 5.00'
+    invertPolarity: false,   // OST Dark Mode (white-on-black/transparent for XREAL Aura & additive AR)
+    gazeDwellEnabled: false, // 1.1s hands-free eye/head gaze dwell-to-click on 3D console
     eyeMode: 'OU',           // 'OU' | 'OD' | 'OS'
     envTheme: 0,             // 0 = Dim Clinic, 1 = Dark Room, 2 = Bright Exam Room
     showAnswers: true,
@@ -1578,13 +1598,18 @@ if (typeof window !== 'undefined') {
     panelPos: [0, 1.13, -1.12],
     panelPitch: -0.42,       // Tilted ~24 deg upward toward user
 
-    // Live diagnostics
+    // Live diagnostics & XR Input Modalities (Hand / Eye / Controller)
     liveEyeDistance: 1.5,
     appliedScale: 1.0,
     hmdPPD: null,
     xrSession: null,
     xrMode: null,
-    needsRecenterInXR: false
+    needsRecenterInXR: false,
+    xrInputModalities: [],
+    fingerPokeCooldownUntil: 0,
+    gazeDwellBtnId: null,
+    gazeDwellStartMs: 0,
+    gazeDwellProgress: 0
   };
 
   state.chartData = SnellenCore.generateChartData(state.chartTypeId, null);
@@ -1949,7 +1974,7 @@ if (typeof window !== 'undefined') {
     const toPxY = y => (0.5 - (y / bh)) * canvas.height;
 
     // Subtle clinical header at very top of lightbox
-    ctx.fillStyle = '#475569';
+    ctx.fillStyle = state.invertPolarity ? '#94a3b8' : '#475569';
     ctx.font = '700 22px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -1965,7 +1990,9 @@ if (typeof window !== 'undefined') {
       const isSelected = rl.originalIdx === currentLayout.activeRowIdx;
 
       ctx.font = `${isSelected ? '700' : '600'} 23px -apple-system, BlinkMacSystemFont, sans-serif`;
-      ctx.fillStyle = isSelected ? '#1d4ed8' : '#475569';
+      ctx.fillStyle = state.invertPolarity
+        ? (isSelected ? '#60a5fa' : '#cbd5e1')
+        : (isSelected ? '#1d4ed8' : '#475569');
       ctx.textBaseline = 'middle';
 
       // Left margin: Snellen 20/X
@@ -2075,16 +2102,17 @@ if (typeof window !== 'undefined') {
       addBtn(`chart_${cid}`, cname, 40 + idx * 202, 245, 190, 70, () => state.chartTypeId === cid, null, () => setChartType(cid));
     });
 
-    // Row 3: Optical Distance Presets
+    // Row 3: Optical Distance Presets (Snellen 20ft, XREAL Aura 4.0m/3.0m, VR 2.0m, Quest3 1.3m, Moohan 0.9m)
     const dists = [
-      [6.096, '20 ft (6.1m)'],
-      [4.0, '4.0 m ETDRS'],
-      [2.0, '2.0 m VR'],
-      [1.5, '1.5 m VR'],
-      [1.3, '1.3 m Quest3']
+      [6.096, '20ft Snellen'],
+      [4.0, '4.0m Aura'],
+      [3.0, '3.0m OST'],
+      [2.0, '2.0m VR'],
+      [1.3, '1.3m Quest3'],
+      [0.9, '0.9m Moohan']
     ];
     dists.forEach(([d, dname], idx) => {
-      addBtn(`dist_${d}`, dname, 40 + idx * 244, 358, 230, 68, () => Math.abs(state.targetDistance - d) < 0.01, null, () => setTargetDistance(d));
+      addBtn(`dist_${d}`, dname, 40 + idx * 202, 358, 190, 68, () => Math.abs(state.targetDistance - d) < 0.01, null, () => setTargetDistance(d));
     });
 
     // Row 4: Virtual Eye Occluder + Sizing Lock + Recenter + Exit XR
@@ -2094,15 +2122,16 @@ if (typeof window !== 'undefined') {
     addBtn('lock_angle', 'Lock 5′ Angle', 735, 470, 245, 72, () => state.lockAngularSize, null, () => setLockAngle(!state.lockAngularSize));
     addBtn('recenter', 'Recenter Chart', 995, 470, 245, 72, () => false, 'blue', () => recenterChart());
 
-    // Row 5: Environment & Exit Session
-    addBtn('theme', 'Room Lighting', 40, 578, 260, 64, () => false, null, () => cycleEnvTheme());
-    addBtn('single_opt', '1-Optotype Mode', 318, 578, 260, 64, () => state.layoutMode === 'single', null, () => setLayoutMode(state.layoutMode === 'single' ? 'full' : 'single'));
-    addBtn('landolt_dir', 'Landolt: 4/8 Dir', 596, 578, 260, 64, () => state.landolt8, null, () => {
+    // Row 5: OST Dark Mode (XREAL Aura), Gaze Dwell, Room Lighting, Landolt 4/8, & Exit Session
+    addBtn('ost_dark', 'OST Dark Mode', 40, 578, 232, 64, () => state.invertPolarity, null, () => setInvertPolarity(!state.invertPolarity));
+    addBtn('gaze_dwell', 'Gaze Dwell', 286, 578, 210, 64, () => state.gazeDwellEnabled, null, () => setGazeDwell(!state.gazeDwellEnabled));
+    addBtn('theme', 'Room Light', 510, 578, 204, 64, () => false, null, () => cycleEnvTheme());
+    addBtn('landolt_dir', 'Landolt: 4/8', 728, 578, 224, 64, () => state.landolt8, null, () => {
       state.landolt8 = !state.landolt8;
       if (state.chartTypeId !== 'landolt_c') setChartType('landolt_c');
       else cycleChart();
     });
-    addBtn('exit_xr', 'Exit VR / AR', 995, 578, 245, 64, () => false, 'red', () => {
+    addBtn('exit_xr', 'Exit VR / AR', 966, 578, 274, 64, () => false, 'red', () => {
       if (state.xrSession) state.xrSession.end();
     });
   }
@@ -2255,15 +2284,25 @@ if (typeof window !== 'undefined') {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label, b.x + b.w * 0.5, b.y + b.h * 0.5);
+
+      // Eye / Head Gaze Dwell progress bar along button bottom edge
+      if (state.gazeDwellEnabled && hovered && state.gazeDwellProgress > 0.02) {
+        const progW = Math.max(8, (b.w - 16) * Math.min(1, state.gazeDwellProgress));
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(b.x + 8, b.y + b.h - 10, progW, 6);
+      }
     }
 
-    // Bottom shortcut hint strip
+    // Bottom shortcut & active XR modality hint strip
     ctx.fillStyle = '#94a3b8';
     ctx.font = '500 20px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
+    const modTag = state.xrInputModalities.length > 0
+      ? `Active XR Input: ${state.xrInputModalities.join(' + ')}  •  `
+      : '';
     const footerTip = (state.exam && state.exam.status === 'active')
-      ? 'Answer via 3D Keypad, Voice ("Charlie", "Up", "Skip"), VR Thumbstick (for E/C directions), or Keyboard'
-      : 'Tip: Point ray & pull Trigger to click  •  Trigger away from panel = Shuffle Chart  •  Thumbstick ↑↓ = Row  •  Grip = Recenter';
+      ? `${modTag}Answer via 3D Keypad (Pinch / Finger Poke / Gaze / Ray), Voice ("Charlie", "Up", "Skip"), or Stick`
+      : `${modTag}Supports Hand Poke & Pinch, Eye Look+Pinch (Moohan/Aura/AVP), Gaze Dwell, & Controllers`;
     ctx.fillText(footerTip, W * 0.5, 718);
 
     vrPanelLayer.upload();
@@ -2305,6 +2344,41 @@ if (typeof window !== 'undefined') {
       rayOrigin[2] + t * rayDir[2]
     ];
     return { t, worldHit, btn: hitBtn };
+  }
+
+  // Direct 3D index-finger-tip poke against the floating VR Control Console (XRHand)
+  function checkFingerPokePanel(tipWorldPos) {
+    const panelModel = M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch);
+    const invPanel = M4.invertRigid(panelModel);
+    const lp = M4.transformPoint(invPanel, tipWorldPos);
+
+    if (
+      Math.abs(lp[0]) > PANEL_WIDTH_M * 0.5 ||
+      Math.abs(lp[1]) > PANEL_HEIGHT_M * 0.5 ||
+      lp[2] < -0.035 ||
+      lp[2] > 0.08
+    ) {
+      return null;
+    }
+
+    const u = (lp[0] / PANEL_WIDTH_M) + 0.5;
+    const v = 0.5 - (lp[1] / PANEL_HEIGHT_M);
+    const px = u * vrPanelLayer.canvas.width;
+    const py = v * vrPanelLayer.canvas.height;
+
+    let hitBtn = null;
+    for (const b of vrButtons) {
+      if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+        hitBtn = b;
+        break;
+      }
+    }
+
+    return {
+      btn: hitBtn,
+      poked: lp[2] <= 0.014,
+      worldHit: M4.transformPoint(panelModel, [lp[0], lp[1], 0])
+    };
   }
 
   // ==========================================================================
@@ -2359,6 +2433,20 @@ if (typeof window !== 'undefined') {
     panelDirty = true;
     updateSidebarUI();
     if (state.viewMode === '2d') render2DChart();
+  }
+
+  function setInvertPolarity(inverted) {
+    state.invertPolarity = !!inverted;
+    panelDirty = true;
+    rebuildChartGeometry();
+  }
+
+  function setGazeDwell(enabled) {
+    state.gazeDwellEnabled = !!enabled;
+    state.gazeDwellBtnId = null;
+    state.gazeDwellProgress = 0;
+    panelDirty = true;
+    updateSidebarUI();
   }
 
   function setEyeMode(mode) {
@@ -2537,8 +2625,8 @@ if (typeof window !== 'undefined') {
     ctx2d.save();
     ctx2d.scale(dpr, dpr);
 
-    // Light clinical background
-    ctx2d.fillStyle = '#e2e8f0';
+    // Light clinical background (or dark OST surround in reverse-polarity mode)
+    ctx2d.fillStyle = state.invertPolarity ? '#090d16' : '#e2e8f0';
     ctx2d.fillRect(0, 0, cssW, cssH);
 
     const layout = currentLayout;
@@ -2549,9 +2637,9 @@ if (typeof window !== 'undefined') {
     const cx = cssW * 0.5;
     const cy = cssH * 0.5;
 
-    // White lightbox surface
-    ctx2d.fillStyle = '#ffffff';
-    ctx2d.strokeStyle = '#1e293b';
+    // Lightbox surface (white clinical board or dark OST surface)
+    ctx2d.fillStyle = state.invertPolarity ? '#0b0f17' : '#ffffff';
+    ctx2d.strokeStyle = state.invertPolarity ? '#334155' : '#1e293b';
     ctx2d.lineWidth = 4;
     ctx2d.beginPath();
     ctx2d.roundRect(cx - boardPxW * 0.5, cy - boardPxH * 0.5, boardPxW, boardPxH, 10);
@@ -2564,7 +2652,7 @@ if (typeof window !== 'undefined') {
       const rh = rl.height * mToCssPx;
 
       if (rl.originalIdx === layout.activeRowIdx && state.layoutMode === 'full') {
-        ctx2d.fillStyle = 'rgba(59, 130, 246, 0.09)';
+        ctx2d.fillStyle = state.invertPolarity ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.09)';
         ctx2d.fillRect(cx - boardPxW * 0.48, ry - rh * 0.68, boardPxW * 0.96, rh * 1.36);
       }
 
@@ -2576,7 +2664,9 @@ if (typeof window !== 'undefined') {
       }
 
       // Margin labels
-      ctx2d.fillStyle = rl.originalIdx === layout.activeRowIdx ? '#1d4ed8' : '#64748b';
+      ctx2d.fillStyle = state.invertPolarity
+        ? (rl.originalIdx === layout.activeRowIdx ? '#60a5fa' : '#94a3b8')
+        : (rl.originalIdx === layout.activeRowIdx ? '#1d4ed8' : '#64748b');
       ctx2d.font = `${rl.originalIdx === layout.activeRowIdx ? '700' : '600'} 12px -apple-system, sans-serif`;
       ctx2d.textBaseline = 'middle';
       ctx2d.textAlign = 'left';
@@ -2586,7 +2676,8 @@ if (typeof window !== 'undefined') {
     }
 
     // Crisp vector 5x5 optotypes at exact calibrated millimeter size
-    ctx2d.fillStyle = '#0f1115';
+    const optFill = state.invertPolarity ? '#f8fafc' : '#0f1115';
+    ctx2d.fillStyle = optFill;
     for (const op of layout.optotypes) {
       const glyph = SnellenCore.getGlyph(op.glyph);
       const ox = cx + op.cx * mToCssPx;
@@ -2619,9 +2710,9 @@ if (typeof window !== 'undefined') {
         const ptrW = Math.max(10, op.size * mToCssPx * 1.15);
         const ptrH = Math.max(3, op.size * mToCssPx * 0.16);
         const ptrY = oy + Math.max(op.size * mToCssPx * 0.72, 6);
-        ctx2d.fillStyle = '#2563eb';
+        ctx2d.fillStyle = state.invertPolarity ? '#60a5fa' : '#2563eb';
         ctx2d.fillRect(ox - ptrW * 0.5, ptrY, ptrW, ptrH);
-        ctx2d.fillStyle = '#0f1115';
+        ctx2d.fillStyle = optFill;
       }
     }
 
@@ -2650,7 +2741,7 @@ if (typeof window !== 'undefined') {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
-  function renderEyeView(projMatrix, viewMatrix, eyeTag, controllers, isAR) {
+  function renderEyeView(projMatrix, viewMatrix, eyeTag, controllers, handJoints, isAR) {
     // Virtual Monocular Eye Occluder in VR/AR stereo
     const occluded =
       (state.eyeMode === 'OD' && eyeTag === 'left') ||
@@ -2713,17 +2804,27 @@ if (typeof window !== 'undefined') {
     const bw = currentLayout.boardWidth;
     const bh = currentLayout.boardHeight;
     const bezel = Math.max(0.018, bw * 0.035);
+    const isAdditiveOST = !!(state.xrSession && state.xrSession.environmentBlendMode === 'additive');
 
-    // Dark anodized lightbox bezel behind white translucent screen
-    const bezelModel = M4.multiply(
-      chartBase,
-      M4.multiply(M4.translation(0, 0, -0.004), M4.scaling(bw + bezel * 2, bh + bezel * 2, 1))
-    );
-    drawSolidQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
+    // Lightbox bezel & surface (in OST Dark Mode on additive waveguides like XREAL Aura, black = transparent so zero glare box is drawn!)
+    if (!isAdditiveOST || !state.invertPolarity) {
+      const bezelModel = M4.multiply(
+        chartBase,
+        M4.multiply(M4.translation(0, 0, -0.004), M4.scaling(bw + bezel * 2, bh + bezel * 2, 1))
+      );
+      if (state.invertPolarity) {
+        drawSolidQuad(vp, bezelModel, 0.06, 0.08, 0.12, 0.94);
+      } else {
+        drawSolidQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
+      }
 
-    // Pure calibrated matte white illuminated chart surface at local z = 0
-    const whiteModel = M4.multiply(chartBase, M4.scaling(bw, bh, 1));
-    drawSolidQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
+      const whiteModel = M4.multiply(chartBase, M4.scaling(bw, bh, 1));
+      if (state.invertPolarity) {
+        drawSolidQuad(vp, whiteModel, 0.03, 0.038, 0.055, 0.97);
+      } else {
+        drawSolidQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
+      }
+    }
 
     // Planar overlays on chart surface (polygonOffset guarantees zero z-fighting at any distance)
     gl.enable(gl.POLYGON_OFFSET_FILL);
@@ -2736,7 +2837,7 @@ if (typeof window !== 'undefined') {
           chartBase,
           M4.multiply(M4.translation(0, rl.centerY, 0.0002), M4.scaling(bw * 0.95, rl.height * 1.38, 1))
         );
-        drawSolidQuad(vp, hlModel, 0.23, 0.51, 0.96, 0.10);
+        drawSolidQuad(vp, hlModel, 0.23, 0.51, 0.96, state.invertPolarity ? 0.16 : 0.10);
       }
       if (rl.row.barColor && state.layoutMode === 'full') {
         const [cr, cg, cb] = rl.row.barColor;
@@ -2765,7 +2866,11 @@ if (typeof window !== 'undefined') {
           chartBase,
           M4.multiply(M4.translation(targetOp.cx, ptrY, 0.00035), M4.scaling(ptrW, ptrH, 1))
         );
-        drawSolidQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
+        if (state.invertPolarity) {
+          drawSolidQuad(vp, ptrModel, 0.38, 0.65, 0.98, 1.0);
+        } else {
+          drawSolidQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
+        }
       }
     }
 
@@ -2777,12 +2882,16 @@ if (typeof window !== 'undefined') {
     );
     drawTexturedQuad(vp, labelModel, marginLabelLayer.tex, 1.0);
 
-    // Razor-sharp vector 5x5 optotype mesh (pure black, MSAA antialiased)
+    // Razor-sharp vector 5x5 optotype mesh (pure black on lightbox, or luminous crisp white in OST Dark Mode)
     gl.polygonOffset(-3.0, -3.0);
     const optModel = M4.multiply(chartBase, M4.translation(0, 0, 0.0006));
     gl.useProgram(colorProg);
     gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, optModel));
-    gl.uniform4f(uColorVal, 0.045, 0.05, 0.06, 1.0);
+    if (state.invertPolarity) {
+      gl.uniform4f(uColorVal, 0.98, 0.99, 1.0, 1.0);
+    } else {
+      gl.uniform4f(uColorVal, 0.045, 0.05, 0.06, 1.0);
+    }
     gl.bindVertexArray(chartOptotypesVAO);
     gl.drawArrays(gl.TRIANGLES, 0, chartOptotypesVertCount);
 
@@ -2801,34 +2910,54 @@ if (typeof window !== 'undefined') {
     );
     drawTexturedQuad(vp, panelFrontModel, vrPanelLayer.tex, 1.0);
 
-    // 4. XR Controller Laser Rays & Hit Cursor
+    // 4. XR Controller / Hand Rays & Eye-Gaze Reticle Dots
     for (const ctrl of controllers) {
-      const len = ctrl.hit ? ctrl.hit.t : 2.5;
-      // Thin ray beam from controller origin along rayDir
-      const rayVerts = new Float32Array([
-        ctrl.origin[0], ctrl.origin[1], ctrl.origin[2],
-        ctrl.origin[0] + ctrl.dir[0] * len,
-        ctrl.origin[1] + ctrl.dir[1] * len,
-        ctrl.origin[2] + ctrl.dir[2] * len
-      ]);
-      gl.useProgram(colorProg);
-      gl.uniformMatrix4fv(uColorMVP, false, vp);
-      gl.uniform4f(uColorVal, 0.38, 0.68, 1.0, 0.9);
-      const tmpBuf = gl.createBuffer();
-      gl.bindVertexArray(null);
-      gl.bindBuffer(gl.ARRAY_BUFFER, tmpBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, rayVerts, gl.STREAM_DRAW);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-      gl.drawArrays(gl.LINES, 0, 2);
-      gl.deleteBuffer(tmpBuf);
+      if (ctrl.showBeam !== false) {
+        const len = ctrl.hit ? ctrl.hit.t : 2.5;
+        const rayVerts = new Float32Array([
+          ctrl.origin[0], ctrl.origin[1], ctrl.origin[2],
+          ctrl.origin[0] + ctrl.dir[0] * len,
+          ctrl.origin[1] + ctrl.dir[1] * len,
+          ctrl.origin[2] + ctrl.dir[2] * len
+        ]);
+        gl.useProgram(colorProg);
+        gl.uniformMatrix4fv(uColorMVP, false, vp);
+        gl.uniform4f(uColorVal, 0.38, 0.68, 1.0, 0.9);
+        const tmpBuf = gl.createBuffer();
+        gl.bindVertexArray(null);
+        gl.bindBuffer(gl.ARRAY_BUFFER, tmpBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, rayVerts, gl.STREAM_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.LINES, 0, 2);
+        gl.deleteBuffer(tmpBuf);
+      }
 
       if (ctrl.hit) {
+        const dotScale = ctrl.showBeam === false ? 0.015 : 0.012;
         const dotModel = M4.multiply(
           M4.trsYPR(ctrl.hit.worldHit, state.chartAnchorYaw, state.panelPitch),
-          M4.multiply(M4.translation(0, 0, 0.002), M4.scaling(0.012, 0.012, 1))
+          M4.multiply(M4.translation(0, 0, 0.002), M4.scaling(dotScale, dotScale, 1))
         );
         drawSolidQuad(vp, dotModel, 0.25, 0.85, 1.0, 1.0);
+      }
+    }
+
+    // 5. Articulated 3D Hand Tracking Joints (XRHand visible in immersive VR & AR)
+    if (handJoints && handJoints.length > 0) {
+      for (const jt of handJoints) {
+        const rSize = Math.max(0.008, (jt.radius || 0.009) * 1.7);
+        const jModel = M4.multiply(
+          M4.trsYPR(jt.pos, state.chartAnchorYaw, state.panelPitch),
+          M4.scaling(rSize, rSize, 1)
+        );
+        if (jt.isActive) {
+          drawSolidQuad(vp, jModel, 0.18, 0.95, 0.65, 1.0);
+        } else if (jt.isTip) {
+          drawSolidQuad(vp, jModel, 0.24, 0.84, 0.98, 0.96);
+        } else {
+          drawSolidQuad(vp, jModel, 0.52, 0.66, 0.86, 0.78);
+        }
       }
     }
   }
@@ -2941,27 +3070,42 @@ if (typeof window !== 'undefined') {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, w, h);
-    renderEyeView(projMatrix, viewMatrix, 'none', [], false);
+    renderEyeView(projMatrix, viewMatrix, 'none', [], [], false);
   }
 
   // ==========================================================================
-  // WebXR Session Management (VR + AR Passthrough + Controllers + Hand/Gaze)
+  // WebXR Session Management (VR + AR + Hand Tracking + Eye/Gaze Tracking)
   // ==========================================================================
   let xrRefSpace = null;
   const prevButtonStates = new Map();
   let stickCooldownUntil = 0;
+  const HAND_JOINTS_TO_DRAW = [
+    'wrist',
+    'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip',
+    'index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip',
+    'middle-finger-phalanx-proximal', 'middle-finger-tip',
+    'ring-finger-phalanx-proximal', 'ring-finger-tip',
+    'pinky-finger-phalanx-proximal', 'pinky-finger-tip'
+  ];
 
   async function initWebXRSupport() {
     const badge = document.getElementById('xrStatusBadge');
     const btnVR = document.getElementById('btnEnterVR');
     const btnAR = document.getElementById('btnEnterAR');
+    const isFileProto = !!(window.location && window.location.protocol === 'file:');
 
-    if (!window.isSecureContext) {
+    if (isFileProto || !window.isSecureContext) {
       document.getElementById('secureWarning').style.display = 'block';
     }
 
     if (!navigator.xr) {
-      badge.textContent = '2D / 3D Ready (No XR)';
+      if (isFileProto || !window.isSecureContext) {
+        badge.textContent = isFileProto ? 'Local File (Use HTTPS/localhost)' : 'Insecure URL (Use HTTPS)';
+        badge.title = 'Browsers disable navigator.xr on file:// and non-HTTPS URLs. Run python3 -m http.server or open via GitHub Pages (https://).';
+      } else {
+        badge.textContent = 'Desktop Mode (Open in Headset)';
+        badge.title = 'This desktop browser does not expose WebXR (e.g. macOS Safari/Firefox). Open via HTTPS inside Moohan, XREAL Aura, Quest, or Vision Pro.';
+      }
       return;
     }
 
@@ -2974,11 +3118,13 @@ if (typeof window !== 'undefined') {
       btnAR.disabled = !arOk;
       if (vrOk || arOk) {
         badge.textContent = vrOk && arOk ? 'VR + AR Ready' : (vrOk ? 'WebXR VR Ready' : 'WebXR AR Ready');
+        badge.title = 'WebXR headset runtime detected and ready.';
       } else {
-        badge.textContent = 'Desktop Preview';
+        badge.textContent = 'Desktop Mode (No HMD Attached)';
+        badge.title = 'WebXR API is supported by this browser, but no VR/AR headset is currently connected to this computer.';
       }
     } catch {
-      badge.textContent = 'Desktop Preview';
+      badge.textContent = 'Desktop Mode (No HMD Attached)';
     }
   }
 
@@ -2992,14 +3138,20 @@ if (typeof window !== 'undefined') {
       state.xrMode = mode;
       state.needsRecenterInXR = true;
 
+      // Auto-enable OST Dark Mode on additive optical see-through glasses (e.g. XREAL Aura)
+      if (session.environmentBlendMode === 'additive' && !state.invertPolarity) {
+        setInvertPolarity(true);
+      }
+
       await gl.makeXRCompatible();
       const nativeScale = (typeof XRWebGLLayer.getNativeFramebufferScaleFactor === 'function')
         ? XRWebGLLayer.getNativeFramebufferScaleFactor(session)
         : 1.0;
 
+      const isBlendAR = session.environmentBlendMode === 'additive' || session.environmentBlendMode === 'alpha-blend';
       const baseLayer = new XRWebGLLayer(session, gl, {
         antialias: true,
-        alpha: mode === 'immersive-ar',
+        alpha: mode === 'immersive-ar' || isBlendAR,
         framebufferScaleFactor: nativeScale
       });
 
@@ -3015,6 +3167,10 @@ if (typeof window !== 'undefined') {
         xrRefSpace = await session.requestReferenceSpace('local');
       }
 
+      session.addEventListener('selectstart', () => {
+        panelDirty = true;
+      });
+
       session.addEventListener('select', e => {
         if (!xrRefSpace) return;
         const rayPose = e.frame.getPose(e.inputSource.targetRaySpace, xrRefSpace);
@@ -3028,7 +3184,7 @@ if (typeof window !== 'undefined') {
             return;
           }
         }
-        // Trigger away from UI panel = quick shuffle (when not inside a scored exam)
+        // Trigger/pinch away from UI panel = quick shuffle (when not inside a scored exam)
         if (!state.exam || state.exam.status !== 'active') {
           cycleChart();
         }
@@ -3042,8 +3198,12 @@ if (typeof window !== 'undefined') {
         state.xrSession = null;
         state.xrMode = null;
         state.hmdPPD = null;
+        state.xrInputModalities = [];
+        state.gazeDwellBtnId = null;
+        state.gazeDwellProgress = 0;
         xrRefSpace = null;
         document.getElementById('btnEnterVR').textContent = 'Enter VR';
+        panelDirty = true;
         requestAnimationFrame(renderDesktopFrame);
       });
 
@@ -3148,10 +3308,76 @@ if (typeof window !== 'undefined') {
 
     updateEyeDistanceMetrics(activeEyePos);
 
-    // Collect controller / hand / transient-pointer rays
+    // Collect Controller, Articulated Hand Tracking (XRHand), Eye Look+Pinch (transient-pointer), & Gaze rays
     const controllers = [];
+    const handJoints = [];
+    const modalitySet = new Set();
     let hoveredBtnId = null;
+
     for (const src of session.inputSources) {
+      if (src.hand) modalitySet.add('Hands');
+      else if (src.targetRayMode === 'transient-pointer') modalitySet.add('Eye+Pinch');
+      else if (src.targetRayMode === 'gaze') modalitySet.add('Eye Gaze');
+      else if (src.targetRayMode === 'tracked-pointer') modalitySet.add('Controller');
+
+      // 1. Articulated XRHand joints + Direct 3D Index-Finger Poke on Console
+      if (src.hand && typeof frame.getJointPose === 'function') {
+        let indexTipPos = null;
+        let thumbTipPos = null;
+        const tempJoints = [];
+
+        for (const jName of HAND_JOINTS_TO_DRAW) {
+          const jointSpace = typeof src.hand.get === 'function' ? src.hand.get(jName) : src.hand[jName];
+          if (!jointSpace) continue;
+          const jPose = frame.getJointPose(jointSpace, xrRefSpace);
+          if (!jPose) continue;
+          const jp = jPose.transform.position;
+          const pos = [jp.x, jp.y, jp.z];
+          if (jName === 'index-finger-tip') indexTipPos = pos;
+          if (jName === 'thumb-tip') thumbTipPos = pos;
+          tempJoints.push({
+            name: jName,
+            pos,
+            radius: jPose.radius || 0.009,
+            isTip: jName.endsWith('-tip'),
+            isActive: false
+          });
+        }
+
+        const isPinching = !!(
+          indexTipPos &&
+          thumbTipPos &&
+          Math.hypot(
+            indexTipPos[0] - thumbTipPos[0],
+            indexTipPos[1] - thumbTipPos[1],
+            indexTipPos[2] - thumbTipPos[2]
+          ) < 0.022
+        );
+
+        let isPoking = false;
+        if (indexTipPos) {
+          const pokeHit = checkFingerPokePanel(indexTipPos);
+          if (pokeHit) {
+            if (pokeHit.btn && !hoveredBtnId) hoveredBtnId = pokeHit.btn.id;
+            if (pokeHit.poked) {
+              isPoking = true;
+              if (pokeHit.btn && time > state.fingerPokeCooldownUntil) {
+                state.fingerPokeCooldownUntil = time + 450;
+                pokeHit.btn.action();
+              }
+            }
+          }
+        }
+
+        for (const jt of tempJoints) {
+          if ((jt.name === 'index-finger-tip' || jt.name === 'thumb-tip') && (isPinching || isPoking)) {
+            jt.isActive = true;
+          }
+          handJoints.push(jt);
+        }
+      }
+
+      // 2. Target Ray (tracked-pointer controllers/hand-rays, transient-pointer eye+pinch, gaze)
       if (!src.targetRaySpace) continue;
       const rayPose = frame.getPose(src.targetRaySpace, xrRefSpace);
       if (!rayPose) continue;
@@ -3161,8 +3387,56 @@ if (typeof window !== 'undefined') {
       const hit = intersectRayWithPanel(origin, dir);
       if (hit && hit.btn && !hoveredBtnId) hoveredBtnId = hit.btn.id;
       if (src.targetRayMode === 'tracked-pointer') {
-        controllers.push({ origin, dir, hit });
+        controllers.push({ origin, dir, hit, showBeam: true });
+      } else if (hit) {
+        // For eye-tracked transient-pointer & gaze, show clean panel reticle dot without laser beam from face
+        controllers.push({ origin, dir, hit, showBeam: false });
       }
+    }
+
+    // 3. Head/Eye Gaze Fallback & Hands-Free 1.1s Dwell-to-Click
+    if (state.gazeDwellEnabled && !hoveredBtnId) {
+      const vm = pose.transform.matrix;
+      const gOrigin = [vm[12], vm[13], vm[14]];
+      const gDir = [-vm[8], -vm[9], -vm[10]];
+      const gHit = intersectRayWithPanel(gOrigin, gDir);
+      if (gHit) {
+        if (gHit.btn) hoveredBtnId = gHit.btn.id;
+        controllers.push({ origin: gOrigin, dir: gDir, hit: gHit, showBeam: false });
+      }
+      modalitySet.add('Gaze Dwell');
+    }
+
+    const modList = [...modalitySet];
+    if (modList.join('|') !== state.xrInputModalities.join('|')) {
+      state.xrInputModalities = modList;
+      panelDirty = true;
+    }
+
+    if (state.gazeDwellEnabled && hoveredBtnId) {
+      if (state.gazeDwellBtnId !== hoveredBtnId) {
+        state.gazeDwellBtnId = hoveredBtnId;
+        state.gazeDwellStartMs = time;
+        state.gazeDwellProgress = 0;
+        panelDirty = true;
+      } else if (time >= state.gazeDwellStartMs) {
+        const prog = Math.min(1.0, (time - state.gazeDwellStartMs) / 1100);
+        if (Math.abs(prog - state.gazeDwellProgress) > 0.02) {
+          state.gazeDwellProgress = prog;
+          panelDirty = true;
+        }
+        if (prog >= 1.0) {
+          const targetBtn = vrButtons.find(b => b.id === hoveredBtnId);
+          state.gazeDwellStartMs = time + 650; // post-click cooldown
+          state.gazeDwellProgress = 0;
+          panelDirty = true;
+          if (targetBtn) targetBtn.action();
+        }
+      }
+    } else if (state.gazeDwellBtnId !== null || state.gazeDwellProgress > 0) {
+      state.gazeDwellBtnId = null;
+      state.gazeDwellProgress = 0;
+      panelDirty = true;
     }
 
     const glLayer = session.renderState.baseLayer;
@@ -3178,11 +3452,14 @@ if (typeof window !== 'undefined') {
     renderVRControlPanel(hoveredBtnId);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
-    const isAR = state.xrMode === 'immersive-ar';
+    const isAR =
+      state.xrMode === 'immersive-ar' ||
+      session.environmentBlendMode === 'additive' ||
+      session.environmentBlendMode === 'alpha-blend';
     for (const view of pose.views) {
       const viewport = glLayer.getViewport(view);
       gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
-      renderEyeView(view.projectionMatrix, view.transform.inverse.matrix, view.eye, controllers, isAR);
+      renderEyeView(view.projectionMatrix, view.transform.inverse.matrix, view.eye, controllers, handJoints, isAR);
     }
   }
 
@@ -3224,7 +3501,21 @@ if (typeof window !== 'undefined') {
       btn.classList.toggle('active', btn.dataset.eye === state.eyeMode);
     });
 
+    const presetDists = [6.096, 4.0, 3.0, 2.0, 1.5, 1.3, 0.9];
+    const matchedPreset = presetDists.find(d => Math.abs(state.targetDistance - d) < 0.005);
+    const selDistEl = document.getElementById('selDistance');
+    if (matchedPreset !== undefined) {
+      selDistEl.value = matchedPreset.toFixed(3);
+      document.getElementById('customDistRow').style.display = 'none';
+    } else {
+      selDistEl.value = 'custom';
+      document.getElementById('customDistRow').style.display = 'grid';
+      document.getElementById('inpCustomDist').value = state.targetDistance.toFixed(2);
+    }
+
     document.getElementById('chkLockAngle').checked = state.lockAngularSize;
+    document.getElementById('chkInvertPolarity').checked = state.invertPolarity;
+    document.getElementById('chkGazeDwell').checked = state.gazeDwellEnabled;
     const themeNames = ['Room: Dim Clinic', 'Room: Dark Room', 'Room: Bright Clinic'];
     document.getElementById('btnEnvTheme').textContent = themeNames[state.envTheme];
 
@@ -3347,8 +3638,28 @@ if (typeof window !== 'undefined') {
   document.getElementById('btnRowUp').addEventListener('click', () => stepActiveRow(-1));
   document.getElementById('btnRowDown').addEventListener('click', () => stepActiveRow(1));
 
-  document.getElementById('selDistance').addEventListener('change', e => setTargetDistance(parseFloat(e.target.value)));
+  document.getElementById('selDistance').addEventListener('change', e => {
+    if (e.target.value === 'custom') {
+      document.getElementById('customDistRow').style.display = 'grid';
+      return;
+    }
+    document.getElementById('customDistRow').style.display = 'none';
+    setTargetDistance(parseFloat(e.target.value));
+  });
+  const applyCustomDist = () => {
+    const raw = parseFloat(document.getElementById('inpCustomDist').value);
+    if (!Number.isNaN(raw)) {
+      const clamped = Math.max(0.4, Math.min(10.0, raw));
+      setTargetDistance(clamped);
+    }
+  };
+  document.getElementById('btnApplyCustomDist').addEventListener('click', applyCustomDist);
+  document.getElementById('inpCustomDist').addEventListener('keydown', e => {
+    if (e.key === 'Enter') applyCustomDist();
+  });
   document.getElementById('chkLockAngle').addEventListener('change', e => setLockAngle(e.target.checked));
+  document.getElementById('chkInvertPolarity').addEventListener('change', e => setInvertPolarity(e.target.checked));
+  document.getElementById('chkGazeDwell').addEventListener('change', e => setGazeDwell(e.target.checked));
   document.getElementById('btnRecenter').addEventListener('click', () => {
     if (state.xrSession) state.needsRecenterInXR = true;
     else {
@@ -3468,6 +3779,8 @@ if (typeof window !== 'undefined') {
     setChartType,
     setLayoutMode,
     setTargetDistance,
+    setInvertPolarity,
+    setGazeDwell,
     setEyeMode,
     setViewportMode,
     startXR,

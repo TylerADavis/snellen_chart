@@ -237,6 +237,7 @@ class MockSpeechRecognition {
 const winListeners = {};
 const windowObj = {
   isSecureContext: true,
+  location: { protocol: 'https:' },
   devicePixelRatio: 2,
   XRWebGLLayer: MockXRWebGLLayer,
   SpeechRecognition: MockSpeechRecognition,
@@ -440,4 +441,119 @@ while (app.state.exam.status === 'active') {
 assert.equal(app.state.exam.status, 'complete');
 assert.equal(app.state.scores.OD.snellen, '20/20');
 assert.equal(elements.get('scoreOD').textContent, '20/20');
-console.log('  ✓ Multi-modal Scored Acuity Exam (Voice + Virtual Keypad + OD/OS/OU Scorecard) verified\n');
+console.log('  ✓ Multi-modal Scored Acuity Exam (Voice + Virtual Keypad + OD/OS/OU Scorecard) verified');
+
+// Test Moohan (0.9m) & XREAL Aura (4.0m + additive OST Dark Mode) + XRHand Finger Poke + Eye Gaze Dwell!
+app.cancelExam();
+app.setEyeMode('OU');
+app.setViewportMode('3d');
+
+// 1. Samsung Project Moohan / Galaxy XR (0.9m focal plane) exact 5.00' subtense check
+app.setTargetDistance(0.9);
+const hMoohan2020 = windowObj.SnellenCore.optotypeHeightMeters(0.9, 1.0);
+assert.ok(Math.abs(windowObj.SnellenCore.subtendedArcmin(hMoohan2020, 0.9) - 5.0) < 1e-6, 'Moohan 0.9m 20/20 must subtend exact 5.00 arcmin');
+
+// 2. XREAL Aura (4.0m OST + additive environmentBlendMode auto-enabling OST Dark Mode)
+app.setTargetDistance(4.0);
+assert.equal(app.state.invertPolarity, false);
+mockXRSession.environmentBlendMode = 'additive';
+xrSessionListeners['select'] = [];
+xrSessionListeners['selectstart'] = [];
+xrSessionListeners['squeeze'] = [];
+xrSessionListeners['end'] = [];
+
+await app.startXR('immersive-ar');
+assert.equal(app.state.invertPolarity, true, 'Additive OST session (XREAL Aura) must auto-enable OST Dark Mode');
+
+// Render an additive OST frame and verify luminous white optotypes (0.98, 0.99, 1.0)
+mockGL.log.length = 0;
+activeXRFrameCallback(100, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+assert.ok(
+  mockGL.log.some(e => e[0] === 'uColor' && Math.abs(e[1] - 0.98) < 0.01 && Math.abs(e[2] - 0.99) < 0.01),
+  'OST Dark Mode must render luminous white vector optotypes on additive waveguides'
+);
+console.log('  ✓ Samsung Moohan (0.9m) & XREAL Aura (4.0m + Additive OST Dark Mode) verified');
+
+// 3. Articulated XRHand Tracking: Direct 3D index-finger-tip poke on the floating 3D console Cycle button
+const cycleBeforeHand = app.state.cycleCount;
+// Compute world point right on upper-left Cycle button of the panel (panel local [-0.25, +0.123, 0.005])
+const cPitch = Math.cos(app.state.panelPitch), sPitch = Math.sin(app.state.panelPitch);
+const pokeWorld = [
+  app.state.panelPos[0] - 0.25,
+  app.state.panelPos[1] + 0.123 * cPitch - 0.005 * sPitch,
+  app.state.panelPos[2] + 0.123 * sPitch + 0.005 * cPitch
+];
+const mockHand = new Map([
+  ['wrist', { joint: 'wrist' }],
+  ['thumb-tip', { joint: 'thumb-tip' }],
+  ['index-finger-tip', { joint: 'index-finger-tip' }]
+]);
+mockXRSession.inputSources = [{
+  handedness: 'right',
+  targetRayMode: 'tracked-pointer',
+  targetRaySpace: {},
+  hand: mockHand
+}];
+
+activeXRFrameCallback(800, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null,
+  getJointPose: (jt) => ({
+    radius: 0.009,
+    transform: {
+      position: jt.joint === 'index-finger-tip'
+        ? { x: pokeWorld[0], y: pokeWorld[1], z: pokeWorld[2] }
+        : { x: pokeWorld[0] + 0.05, y: pokeWorld[1] - 0.04, z: pokeWorld[2] + 0.05 }
+    }
+  })
+});
+assert.equal(app.state.cycleCount, cycleBeforeHand + 1, 'XRHand index-finger-tip poke on 3D console must trigger button');
+assert.ok(app.state.xrInputModalities.includes('Hands'), 'Should detect active Hands modality');
+console.log('  ✓ XRHand articulated hand tracking & direct 3D finger-poke interaction verified');
+
+// 4. Eye-Tracked Look-and-Pinch (transient-pointer) & 1.1s Gaze Dwell-to-Click
+const eyeRayDx = pokeWorld[0] - 0;
+const eyeRayDy = pokeWorld[1] - 1.65;
+const eyeRayDz = pokeWorld[2] - 0;
+const eyeRayLen = Math.hypot(eyeRayDx, eyeRayDy, eyeRayDz);
+const eyeRayMat = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  -eyeRayDx / eyeRayLen, -eyeRayDy / eyeRayLen, -eyeRayDz / eyeRayLen, 0,
+  0, 1.65, 0, 1
+]);
+
+// 4a. transient-pointer (Android XR Moohan/Aura & Vision Pro eye look + finger pinch)
+for (const fn of xrSessionListeners['select']) {
+  fn({
+    inputSource: { targetRaySpace: {}, targetRayMode: 'transient-pointer' },
+    frame: { getPose: () => ({ transform: { matrix: eyeRayMat } }) }
+  });
+}
+assert.equal(app.state.cycleCount, cycleBeforeHand + 2, 'Eye-tracked transient-pointer pinch must trigger hovered 3D button');
+
+// 4b. Hands-free 1.1s Eye Gaze Dwell-to-Click
+mockXRSession.inputSources = [{
+  handedness: 'none',
+  targetRayMode: 'gaze',
+  targetRaySpace: {}
+}];
+app.setGazeDwell(true);
+activeXRFrameCallback(2000, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => ({ transform: { matrix: eyeRayMat } })
+});
+activeXRFrameCallback(3150, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => ({ transform: { matrix: eyeRayMat } })
+});
+assert.equal(app.state.cycleCount, cycleBeforeHand + 3, '1.1s Eye Gaze Dwell must click hovered 3D button hands-free');
+mockXRSession.end();
+console.log('  ✓ Eye tracking (transient-pointer Look+Pinch & 1.1s Gaze Dwell-Click) verified\n');

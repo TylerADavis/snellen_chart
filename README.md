@@ -18,9 +18,13 @@ A zero-dependency, single-file (`index.html`) **WebXR VR / AR + Calibrated 2D** 
 - **Strict Anti-Memorization Cycling**
   - Every shuffle guarantees **100% of positions change** from the previous chart, prevents adjacent duplicates, and enforces unique letters per row on Sloan/Snellen rows.
   - Supports **Full Chart**, **Single-Line Isolation**, and **Single-Optotype** modes, plus a toggleable **Examiner Answer Key** on desktop.
-- **VR Fixed Focal Plane & Optics Handling**
-  - Distance presets for **`1.3 m` (Quest 3 pancake focal plane)**, **`1.5 m` / `2.0 m` (typical VR focal planes)**, **`4.0 m` (ETDRS)**, and **`20 ft / 6.096 m` (Standard Snellen)**. Placing the virtual chart at your headset's optical focal plane (`~1.3–2.0 m`) eliminates **Vergence-Accommodation Conflict (VAC)** while preserving identical retinal angular subtense.
+- **VR & AR Optical Focal Plane Presets (Including Samsung Moohan & XREAL Aura)**
+  - Built-in optical focal distance presets for **`0.9 m` (Samsung Project Moohan / Galaxy XR, ~1.11 D, ~35 PPD)**, **`1.3 m` (Meta Quest 3 / Pro, 0.77 D)**, **`1.5 m` / `2.0 m` (PCVR / Quest 2)**, **`3.0 m` / `4.0 m` (XREAL Aura / Birdbath OST & ETDRS)**, **`20 ft / 6.096 m` (Standard Snellen)**, plus **Custom Distance (`0.4–10.0 m`)**. Placing the virtual chart at your headset's optical focal plane eliminates **Vergence-Accommodation Conflict (VAC)** while preserving exact `5.00′` retinal subtense.
+  - **OST Dark / Reverse Polarity Mode (XREAL Aura & Additive AR)**: On additive optical see-through glasses (`environmentBlendMode === 'additive'`), `#000000` is transparent and a white chart board causes waveguide glare. **OST Dark Mode** auto-activates on additive displays (and can be toggled anytime) to render crisp luminous white vector optotypes without background glare.
   - Live **HMD Pixels-Per-Degree (PPD) & Nyquist Floor** telemetry computed directly from the headset's stereo projection matrix and eye-buffer resolution.
+- **Hand Tracking (`XRHand`) & Eye Tracking (`transient-pointer` + Gaze Dwell)**
+  - **Articulated Hand Tracking**: Renders 3D hand joints in VR/AR, supports **pinch-ray pointing**, and supports **direct 3D index-finger poking** on the floating console buttons.
+  - **Eye Tracking**: Supports **`transient-pointer` look-and-pinch** (Android XR on Samsung Moohan & XREAL Aura, plus Apple Vision Pro), **`gaze` eye rays**, and an optional **hands-free `1.1s` Eye/Head Gaze Dwell-to-Click** mode with visual progress bars on buttons.
 - **Virtual Monocular Eye Occluder (`OU` / `OD` / `OS`)**
   - Test **Right Eye (`OD`)** or **Left Eye (`OS`)** in VR without trying to reach inside the headset facial interface — cleanly occludes the opposite eye's stereo pass with a low-rivalry neutral dark field.
 - **Adaptive Clinical Scoring (Voice + 3D Virtual Keypad + Thumbstick + Keyboard)**
