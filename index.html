@@ -416,7 +416,7 @@
         <option value="2.000">2.0 m (6.6 ft) — PCVR / Quest 2 (0.50 D)</option>
         <option value="1.500" selected>1.5 m (4.9 ft) — Mid VR Focal Plane (0.67 D)</option>
         <option value="1.300">1.3 m (4.3 ft) — Meta Quest 3 / Pro (0.77 D)</option>
-        <option value="0.900">0.9 m (3.0 ft) — Samsung Moohan / Galaxy XR (1.11 D)</option>
+        <option value="0.900">0.9 m (3.0 ft) — Samsung Galaxy XR (1.11 D)</option>
         <option value="custom">Custom Focal Distance (m)…</option>
       </select>
 
@@ -466,7 +466,7 @@
       </div>
 
       <div class="warn-box" id="opticsNote">
-        <strong>Device Focal Planes:</strong> Samsung <strong>Moohan</strong> focuses closer (~0.9 m / 1.11 D, ~35 PPD), Quest 3 at ~1.3 m, and <strong>XREAL Aura</strong> OST optics collimate far (~3.0–4.0 m; use <em>OST Dark Mode</em> so additive waveguides render luminous crisp optotypes without background glare).
+        <strong>Device Focal Planes:</strong> <strong>Samsung Galaxy XR</strong> focuses closer (~0.9 m / 1.11 D, ~35 PPD), Quest 3 at ~1.3 m, and <strong>XREAL Aura</strong> OST optics collimate far (~3.0–4.0 m; use <em>OST Dark Mode</em> so additive waveguides render luminous crisp optotypes without background glare).
       </div>
     </div>
 
@@ -1926,20 +1926,34 @@ if (typeof window !== 'undefined') {
 
   const marginLabelLayer = createCanvasTexture(1024, 1536);
   const vrPanelLayer = createCanvasTexture(1280, 800);
-  const occluderNoticeLayer = createCanvasTexture(512, 128);
+  const occluderNoticeLayer = createCanvasTexture(1024, 240);
 
-  // Render dim monocular occluder indicator once
-  function updateOccluderTexture(text) {
+  // Render crisp, high-contrast monocular occluder status pill
+  function updateOccluderTexture(title, subtitle) {
     const { ctx, canvas } = occluderNoticeLayer;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(255,255,255,0.20)';
-    ctx.font = '600 22px -apple-system, BlinkMacSystemFont, sans-serif';
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.roundRect(12, 12, W - 24, H - 24, 28);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '800 44px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(title, W * 0.5, 92);
+
+    ctx.fillStyle = '#93c5fd';
+    ctx.font = '600 28px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(subtitle, W * 0.5, 162);
     occluderNoticeLayer.upload();
   }
-  updateOccluderTexture('Eye Occluded for Monocular Acuity Test');
+  updateOccluderTexture('EYE OCCLUDED', 'Monocular Visual Acuity Test');
 
   // ==========================================================================
   // Rebuild Physical Chart Mesh & Margin Labels
@@ -2117,14 +2131,14 @@ if (typeof window !== 'undefined') {
       addBtn(`chart_${cid}`, cname, 40 + idx * 202, 245, 190, 70, () => state.chartTypeId === cid, null, () => setChartType(cid));
     });
 
-    // Row 3: Optical Distance Presets (Snellen 20ft, XREAL Aura 4.0m/3.0m, VR 2.0m, Quest3 1.3m, Moohan 0.9m)
+    // Row 3: Optical Distance Presets (Snellen 20ft, XREAL Aura 4.0m/3.0m, VR 2.0m, Quest3 1.3m, Galaxy XR 0.9m)
     const dists = [
       [6.096, '20ft Snellen'],
       [4.0, '4.0m Aura'],
       [3.0, '3.0m OST'],
       [2.0, '2.0m VR'],
       [1.3, '1.3m Quest3'],
-      [0.9, '0.9m Moohan']
+      [0.9, '0.9m Galaxy XR']
     ];
     dists.forEach(([d, dname], idx) => {
       addBtn(`dist_${d}`, dname, 40 + idx * 202, 358, 190, 68, () => Math.abs(state.targetDistance - d) < 0.01, null, () => setTargetDistance(d));
@@ -2321,7 +2335,7 @@ if (typeof window !== 'undefined') {
       : '';
     const footerTip = (state.exam && state.exam.status === 'active')
       ? `${modTag}Answer via 3D Keypad (Pinch / Finger Poke / Gaze / Ray), Voice ("Charlie", "Up", "Skip"), or Stick`
-      : `${modTag}Supports Hand Poke & Pinch, Eye Look+Pinch (Moohan/Aura/AVP), Gaze Dwell, & Controllers`;
+      : `${modTag}Supports Hand Poke & Pinch, Eye Look+Pinch (Galaxy XR / Aura / AVP), Gaze Dwell, & Controllers`;
     ctx.fillText(footerTip, W * 0.5, 718);
 
     vrPanelLayer.upload();
@@ -2470,8 +2484,11 @@ if (typeof window !== 'undefined') {
 
   function setEyeMode(mode) {
     state.eyeMode = mode;
-    if (mode === 'OD') updateOccluderTexture('OS (Left Eye) Occluded  •  Testing Right Eye (OD)');
-    else if (mode === 'OS') updateOccluderTexture('OD (Right Eye) Occluded  •  Testing Left Eye (OS)');
+    if (mode === 'OD') {
+      updateOccluderTexture('LEFT EYE (OS) OCCLUDED', 'Testing Right Eye (OD)  •  Tap OU for Both Eyes');
+    } else if (mode === 'OS') {
+      updateOccluderTexture('RIGHT EYE (OD) OCCLUDED', 'Testing Left Eye (OS)  •  Tap OU for Both Eyes');
+    }
     panelDirty = true;
     updateSidebarUI();
   }
@@ -2766,16 +2783,26 @@ if (typeof window !== 'undefined') {
       (state.eyeMode === 'OD' && eyeTag === 'left') ||
       (state.eyeMode === 'OS' && eyeTag === 'right');
 
-    if (occluded) {
-      // Neutral matte dark-gray field avoids harsh binocular rivalry
+    const vp = M4.multiply(projMatrix, viewMatrix);
+    const drawOccluderBadge = () => {
+      // Positioned in 3D space right in the central lens sweet spot (~9 deg below eye level, cleanly above the 3D console)
+      const badgePos = [state.panelPos[0], state.panelPos[1] + 0.31, state.panelPos[2]];
+      const badgeModel = M4.multiply(
+        M4.trsYPR(badgePos, state.chartAnchorYaw, -0.16),
+        M4.scaling(0.52, 0.122, 1)
+      );
+      drawTexturedQuad(vp, badgeModel, occluderNoticeLayer.tex, 1.0);
+    };
+
+    if (occluded && !isAR) {
+      // VR Monocular Occluder: neutral matte dark-gray field + crisp, high-contrast status pill
       gl.clearColor(0.07, 0.08, 0.10, 1.0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.disable(gl.DEPTH_TEST);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      const badgeMVP = M4.multiply(M4.translation(0, -0.52, 0), M4.scaling(0.75, 0.18, 1));
-      drawTexturedQuad(M4.identity(), badgeMVP, occluderNoticeLayer.tex, 0.85);
-      gl.enable(gl.DEPTH_TEST);
+      drawOccluderBadge();
       return;
     }
 
@@ -2797,124 +2824,127 @@ if (typeof window !== 'undefined') {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const vp = M4.multiply(projMatrix, viewMatrix);
-
-    // 1. Exam room floor & distance grid (skipped in AR passthrough)
-    if (!isAR) {
-      const floorModel = M4.multiply(
-        M4.translation(0, 0, -3),
-        M4.multiply(M4.rotationX(-Math.PI / 2), M4.scaling(12, 14, 1))
-      );
-      drawSolidQuad(vp, floorModel, th.floor[0], th.floor[1], th.floor[2], 1.0);
-
-      gl.useProgram(colorProg);
-      gl.uniformMatrix4fv(uColorMVP, false, vp);
-      gl.uniform4f(uColorVal, th.grid[0], th.grid[1], th.grid[2], 1.0);
-      gl.bindVertexArray(roomGridVAO);
-      gl.drawArrays(gl.LINES, 0, roomGridVertCount);
-    }
-
-    // 2. Physical Snellen Lightbox + Exact Vector Optotypes
-    const scale = state.appliedScale;
-    const chartBase = M4.multiply(
-      M4.trsYPR(state.chartAnchorPos, state.chartAnchorYaw, 0),
-      M4.scaling(scale, scale, 1.0)
-    );
-    const bw = currentLayout.boardWidth;
-    const bh = currentLayout.boardHeight;
-    const bezel = Math.max(0.018, bw * 0.035);
-    const isAdditiveOST = !!(state.xrSession && state.xrSession.environmentBlendMode === 'additive');
-
-    // Lightbox bezel & surface (in OST Dark Mode on additive waveguides like XREAL Aura, black = transparent so zero glare box is drawn!)
-    if (!isAdditiveOST || !state.invertPolarity) {
-      const bezelModel = M4.multiply(
-        chartBase,
-        M4.multiply(M4.translation(0, 0, -0.004), M4.scaling(bw + bezel * 2, bh + bezel * 2, 1))
-      );
-      if (state.invertPolarity) {
-        drawSolidQuad(vp, bezelModel, 0.06, 0.08, 0.12, 0.94);
-      } else {
-        drawSolidQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
-      }
-
-      const whiteModel = M4.multiply(chartBase, M4.scaling(bw, bh, 1));
-      if (state.invertPolarity) {
-        drawSolidQuad(vp, whiteModel, 0.03, 0.038, 0.055, 0.97);
-      } else {
-        drawSolidQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
-      }
-    }
-
-    // Planar overlays on chart surface (polygonOffset guarantees zero z-fighting at any distance)
-    gl.enable(gl.POLYGON_OFFSET_FILL);
-
-    // Active row subtle indicator + Snellen green/red clinical bars
-    gl.polygonOffset(-1.0, -1.0);
-    for (const rl of currentLayout.rowLayouts) {
-      if (rl.originalIdx === currentLayout.activeRowIdx && state.layoutMode === 'full') {
-        const hlModel = M4.multiply(
-          chartBase,
-          M4.multiply(M4.translation(0, rl.centerY, 0.0002), M4.scaling(bw * 0.95, rl.height * 1.38, 1))
+    if (occluded && isAR) {
+      // AR Monocular Occluder: blank ONLY the Snellen chart in this eye while keeping passthrough + 3D Control Console & hands visible!
+      drawOccluderBadge();
+    } else {
+      // 1. Exam room floor & distance grid (skipped in AR passthrough)
+      if (!isAR) {
+        const floorModel = M4.multiply(
+          M4.translation(0, 0, -3),
+          M4.multiply(M4.rotationX(-Math.PI / 2), M4.scaling(12, 14, 1))
         );
-        drawSolidQuad(vp, hlModel, 0.23, 0.51, 0.96, state.invertPolarity ? 0.16 : 0.10);
-      }
-      if (rl.row.barColor && state.layoutMode === 'full') {
-        const [cr, cg, cb] = rl.row.barColor;
-        const barH = Math.max(0.0015, rl.height * 0.14);
-        const barModel = M4.multiply(
-          chartBase,
-          M4.multiply(
-            M4.translation(0, rl.centerY - rl.height * 0.68, 0.0003),
-            M4.scaling(rl.rowWidth * 1.08, barH, 1)
-          )
-        );
-        drawSolidQuad(vp, barModel, cr, cg, cb, 1.0);
-      }
-    }
+        drawSolidQuad(vp, floorModel, th.floor[0], th.floor[1], th.floor[2], 1.0);
 
-    // Target optotype blue underline pointer during active scored exam
-    if (state.exam && state.exam.status === 'active') {
-      const targetOp = currentLayout.optotypes.find(
-        op => op.rowIdx === state.exam.rowIdx && op.colIdx === state.exam.colIdx
+        gl.useProgram(colorProg);
+        gl.uniformMatrix4fv(uColorMVP, false, vp);
+        gl.uniform4f(uColorVal, th.grid[0], th.grid[1], th.grid[2], 1.0);
+        gl.bindVertexArray(roomGridVAO);
+        gl.drawArrays(gl.LINES, 0, roomGridVertCount);
+      }
+
+      // 2. Physical Snellen Lightbox + Exact Vector Optotypes
+      const scale = state.appliedScale;
+      const chartBase = M4.multiply(
+        M4.trsYPR(state.chartAnchorPos, state.chartAnchorYaw, 0),
+        M4.scaling(scale, scale, 1.0)
       );
-      if (targetOp) {
-        const ptrW = Math.max(0.005, targetOp.size * 1.15);
-        const ptrH = Math.max(0.0022, targetOp.size * 0.18);
-        const ptrY = targetOp.cy - Math.max(targetOp.size * 0.76, 0.0045);
-        const ptrModel = M4.multiply(
+      const bw = currentLayout.boardWidth;
+      const bh = currentLayout.boardHeight;
+      const bezel = Math.max(0.018, bw * 0.035);
+      const isAdditiveOST = !!(state.xrSession && state.xrSession.environmentBlendMode === 'additive');
+
+      // Lightbox bezel & surface (in OST Dark Mode on additive waveguides like XREAL Aura, black = transparent so zero glare box is drawn!)
+      if (!isAdditiveOST || !state.invertPolarity) {
+        const bezelModel = M4.multiply(
           chartBase,
-          M4.multiply(M4.translation(targetOp.cx, ptrY, 0.00035), M4.scaling(ptrW, ptrH, 1))
+          M4.multiply(M4.translation(0, 0, -0.004), M4.scaling(bw + bezel * 2, bh + bezel * 2, 1))
         );
         if (state.invertPolarity) {
-          drawSolidQuad(vp, ptrModel, 0.38, 0.65, 0.98, 1.0);
+          drawSolidQuad(vp, bezelModel, 0.06, 0.08, 0.12, 0.94);
         } else {
-          drawSolidQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
+          drawSolidQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
+        }
+
+        const whiteModel = M4.multiply(chartBase, M4.scaling(bw, bh, 1));
+        if (state.invertPolarity) {
+          drawSolidQuad(vp, whiteModel, 0.03, 0.038, 0.055, 0.97);
+        } else {
+          drawSolidQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
         }
       }
+
+      // Planar overlays on chart surface (polygonOffset guarantees zero z-fighting at any distance)
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+
+      // Active row subtle indicator + Snellen green/red clinical bars
+      gl.polygonOffset(-1.0, -1.0);
+      for (const rl of currentLayout.rowLayouts) {
+        if (rl.originalIdx === currentLayout.activeRowIdx && state.layoutMode === 'full') {
+          const hlModel = M4.multiply(
+            chartBase,
+            M4.multiply(M4.translation(0, rl.centerY, 0.0002), M4.scaling(bw * 0.95, rl.height * 1.38, 1))
+          );
+          drawSolidQuad(vp, hlModel, 0.23, 0.51, 0.96, state.invertPolarity ? 0.16 : 0.10);
+        }
+        if (rl.row.barColor && state.layoutMode === 'full') {
+          const [cr, cg, cb] = rl.row.barColor;
+          const barH = Math.max(0.0015, rl.height * 0.14);
+          const barModel = M4.multiply(
+            chartBase,
+            M4.multiply(
+              M4.translation(0, rl.centerY - rl.height * 0.68, 0.0003),
+              M4.scaling(rl.rowWidth * 1.08, barH, 1)
+            )
+          );
+          drawSolidQuad(vp, barModel, cr, cg, cb, 1.0);
+        }
+      }
+
+      // Target optotype blue underline pointer during active scored exam
+      if (state.exam && state.exam.status === 'active') {
+        const targetOp = currentLayout.optotypes.find(
+          op => op.rowIdx === state.exam.rowIdx && op.colIdx === state.exam.colIdx
+        );
+        if (targetOp) {
+          const ptrW = Math.max(0.005, targetOp.size * 1.15);
+          const ptrH = Math.max(0.0022, targetOp.size * 0.18);
+          const ptrY = targetOp.cy - Math.max(targetOp.size * 0.76, 0.0045);
+          const ptrModel = M4.multiply(
+            chartBase,
+            M4.multiply(M4.translation(targetOp.cx, ptrY, 0.00035), M4.scaling(ptrW, ptrH, 1))
+          );
+          if (state.invertPolarity) {
+            drawSolidQuad(vp, ptrModel, 0.38, 0.65, 0.98, 1.0);
+          } else {
+            drawSolidQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
+          }
+        }
+      }
+
+      // Margin acuity labels (20/20, 6/6, LogMAR)
+      gl.polygonOffset(-2.0, -2.0);
+      const labelModel = M4.multiply(
+        chartBase,
+        M4.multiply(M4.translation(0, 0, 0.0004), M4.scaling(bw, bh, 1))
+      );
+      drawTexturedQuad(vp, labelModel, marginLabelLayer.tex, 1.0);
+
+      // Razor-sharp vector 5x5 optotype mesh (pure black on lightbox, or luminous crisp white in OST Dark Mode)
+      gl.polygonOffset(-3.0, -3.0);
+      const optModel = M4.multiply(chartBase, M4.translation(0, 0, 0.0006));
+      gl.useProgram(colorProg);
+      gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, optModel));
+      if (state.invertPolarity) {
+        gl.uniform4f(uColorVal, 0.98, 0.99, 1.0, 1.0);
+      } else {
+        gl.uniform4f(uColorVal, 0.045, 0.05, 0.06, 1.0);
+      }
+      gl.bindVertexArray(chartOptotypesVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, chartOptotypesVertCount);
+
+      gl.disable(gl.POLYGON_OFFSET_FILL);
     }
-
-    // Margin acuity labels (20/20, 6/6, LogMAR)
-    gl.polygonOffset(-2.0, -2.0);
-    const labelModel = M4.multiply(
-      chartBase,
-      M4.multiply(M4.translation(0, 0, 0.0004), M4.scaling(bw, bh, 1))
-    );
-    drawTexturedQuad(vp, labelModel, marginLabelLayer.tex, 1.0);
-
-    // Razor-sharp vector 5x5 optotype mesh (pure black on lightbox, or luminous crisp white in OST Dark Mode)
-    gl.polygonOffset(-3.0, -3.0);
-    const optModel = M4.multiply(chartBase, M4.translation(0, 0, 0.0006));
-    gl.useProgram(colorProg);
-    gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, optModel));
-    if (state.invertPolarity) {
-      gl.uniform4f(uColorVal, 0.98, 0.99, 1.0, 1.0);
-    } else {
-      gl.uniform4f(uColorVal, 0.045, 0.05, 0.06, 1.0);
-    }
-    gl.bindVertexArray(chartOptotypesVAO);
-    gl.drawArrays(gl.TRIANGLES, 0, chartOptotypesVertCount);
-
-    gl.disable(gl.POLYGON_OFFSET_FILL);
 
     // 3. Floating 3D VR Control Console
     const panelBackModel = M4.multiply(
@@ -3088,6 +3118,7 @@ if (typeof window !== 'undefined') {
     renderVRControlPanel(desktopHoveredBtn ? desktopHoveredBtn.id : null);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.SCISSOR_TEST);
     gl.viewport(0, 0, w, h);
     renderEyeView(projMatrix, viewMatrix, 'none', [], [], false);
   }
@@ -3123,7 +3154,7 @@ if (typeof window !== 'undefined') {
         badge.title = 'Browsers disable navigator.xr on file:// and non-HTTPS URLs. Run python3 -m http.server or open via GitHub Pages (https://).';
       } else {
         badge.textContent = 'Desktop Mode (Open in Headset)';
-        badge.title = 'This desktop browser does not expose WebXR (e.g. macOS Safari/Firefox). Open via HTTPS inside Moohan, XREAL Aura, Quest, or Vision Pro.';
+        badge.title = 'This desktop browser does not expose WebXR (e.g. macOS Safari/Firefox). Open via HTTPS inside Samsung Galaxy XR, XREAL Aura, Quest, or Vision Pro.';
       }
       return;
     }
@@ -3471,6 +3502,9 @@ if (typeof window !== 'undefined') {
     renderVRControlPanel(hoveredBtnId);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
+    // CRITICAL: gl.clear() ignores gl.viewport() unless SCISSOR_TEST is enabled!
+    // Scissor per-eye viewport so the right eye pass never wipes or greys out the left eye!
+    gl.enable(gl.SCISSOR_TEST);
     const isAR =
       state.xrMode === 'immersive-ar' ||
       session.environmentBlendMode === 'additive' ||
@@ -3478,8 +3512,10 @@ if (typeof window !== 'undefined') {
     for (const view of pose.views) {
       const viewport = glLayer.getViewport(view);
       gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+      gl.scissor(viewport.x, viewport.y, viewport.width, viewport.height);
       renderEyeView(view.projectionMatrix, view.transform.inverse.matrix, view.eye, controllers, handJoints, isAR);
     }
+    gl.disable(gl.SCISSOR_TEST);
   }
 
   // ==========================================================================

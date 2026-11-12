@@ -93,6 +93,7 @@ function makeMockWebGL2() {
     SRC_ALPHA: 0x0302,
     ONE_MINUS_SRC_ALPHA: 0x0303,
     POLYGON_OFFSET_FILL: 0x8037,
+    SCISSOR_TEST: 0x0C11,
     FRAMEBUFFER: 0x8D40,
     createShader: type => ({ id: objId++, type }),
     shaderSource: (sh, src) => { sh.src = src; assert.ok(src.includes('#version 300 es'), 'Must be GLSL ES 3.00'); },
@@ -126,13 +127,14 @@ function makeMockWebGL2() {
     uniform1f: () => {},
     clearColor: (r, g, b, a) => log.push(['clearColor', r, g, b, a]),
     clear: () => log.push(['clear']),
-    enable: () => {},
-    disable: () => {},
+    enable: cap => log.push(['enable', cap]),
+    disable: cap => log.push(['disable', cap]),
     depthFunc: () => {},
     blendFunc: () => {},
     polygonOffset: () => {},
     bindFramebuffer: () => {},
     viewport: (x, y, w, h) => log.push(['viewport', x, y, w, h]),
+    scissor: (x, y, w, h) => log.push(['scissor', x, y, w, h]),
     drawArrays: (mode, first, count) => log.push(['drawArrays', mode, first, count]),
     makeXRCompatible: async () => {}
   };
@@ -365,7 +367,23 @@ assert.ok(Math.abs(app.state.liveEyeDistance - 1.05) < 1e-4, `Expected live dist
 assert.ok(Math.abs(app.state.appliedScale - (1.05 / 1.5)) < 1e-4, 'Chart must dynamically scale down when leaning forward so 20/20 stays 5.00 arcminutes');
 console.log('  ✓ Dynamic lean-proof angular sizing verified in VR (5.00 arcminutes preserved)');
 
-// Frame 3: Test Monocular Right-Eye Only (OD) occlusion in stereo pass
+// Frame 3: Test Stereo Scissor Isolation in OU, OD, and OS modes (prevents right-eye clear from wiping left eye!)
+app.setEyeMode('OU');
+mockGL.log.length = 0;
+activeXRFrameCallback(40, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+const ouScissors = mockGL.log.filter(e => e[0] === 'scissor');
+assert.equal(ouScissors.length, 2, 'Must scissor each stereo eye viewport before gl.clear');
+assert.deepEqual(ouScissors[0].slice(1), [0, 0, 2064, 2208], 'Left eye scissor box');
+assert.deepEqual(ouScissors[1].slice(1), [2064, 0, 2064, 2208], 'Right eye scissor box');
+assert.ok(mockGL.log.some(e => e[0] === 'enable' && e[1] === mockGL.SCISSOR_TEST), 'Must enable SCISSOR_TEST in stereo pass');
+const ouOptDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] > 60);
+assert.equal(ouOptDraws.length, 2, 'Both eyes must draw Snellen optotype mesh in OU mode');
+
+// Test OD (Right Eye tested, Left Eye occluded) AND OS (Left Eye tested, Right Eye occluded)
 app.setEyeMode('OD');
 mockGL.log.length = 0;
 activeXRFrameCallback(48, {
@@ -377,7 +395,20 @@ const clearColors = mockGL.log.filter(e => e[0] === 'clearColor');
 assert.equal(clearColors.length, 2, 'Two eye clears per stereo frame');
 assert.ok(Math.abs(clearColors[0][1] - 0.07) < 0.005, 'Left eye must clear to neutral dark occluder in OD mode');
 assert.ok(Math.abs(clearColors[1][1] - 0.09) < 0.005, 'Right eye must render normal clinic background in OD mode');
-console.log('  ✓ Stereo monocular Virtual Eye Occluder (OD/OS) verified');
+
+app.setEyeMode('OS');
+mockGL.log.length = 0;
+activeXRFrameCallback(56, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+const osClears = mockGL.log.filter(e => e[0] === 'clearColor');
+assert.ok(Math.abs(osClears[0][1] - 0.09) < 0.005, 'Left eye must render normal clinic background in OS mode');
+assert.ok(Math.abs(osClears[1][1] - 0.07) < 0.005, 'Right eye must clear ONLY scissored right half to dark occluder in OS mode');
+const osOptDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] > 60);
+assert.equal(osOptDraws.length, 1, 'Only open left eye draws Snellen optotypes in OS mode');
+console.log('  ✓ Scissored stereo Virtual Eye Occluder (OU / OD / OS) verified');
 
 // Frame 4: Test 3D VR Controller Laser Raycast clicking the "Cycle / Shuffle Chart" button on the floating console
 const prevCycleCount = app.state.cycleCount;
@@ -443,15 +474,15 @@ assert.equal(app.state.scores.OD.snellen, '20/20');
 assert.equal(elements.get('scoreOD').textContent, '20/20');
 console.log('  ✓ Multi-modal Scored Acuity Exam (Voice + Virtual Keypad + OD/OS/OU Scorecard) verified');
 
-// Test Moohan (0.9m) & XREAL Aura (4.0m + additive OST Dark Mode) + XRHand Finger Poke + Eye Gaze Dwell!
+// Test Samsung Galaxy XR (0.9m) & XREAL Aura (4.0m + additive OST Dark Mode) + AR Occluded Panel + XRHand + Eye Gaze!
 app.cancelExam();
 app.setEyeMode('OU');
 app.setViewportMode('3d');
 
-// 1. Samsung Project Moohan / Galaxy XR (0.9m focal plane) exact 5.00' subtense check
+// 1. Samsung Galaxy XR (0.9m focal plane) exact 5.00' subtense check
 app.setTargetDistance(0.9);
-const hMoohan2020 = windowObj.SnellenCore.optotypeHeightMeters(0.9, 1.0);
-assert.ok(Math.abs(windowObj.SnellenCore.subtendedArcmin(hMoohan2020, 0.9) - 5.0) < 1e-6, 'Moohan 0.9m 20/20 must subtend exact 5.00 arcmin');
+const hGalaxyXR2020 = windowObj.SnellenCore.optotypeHeightMeters(0.9, 1.0);
+assert.ok(Math.abs(windowObj.SnellenCore.subtendedArcmin(hGalaxyXR2020, 0.9) - 5.0) < 1e-6, 'Galaxy XR 0.9m 20/20 must subtend exact 5.00 arcmin');
 
 // 2. XREAL Aura (4.0m OST + additive environmentBlendMode auto-enabling OST Dark Mode)
 app.setTargetDistance(4.0);
@@ -476,7 +507,27 @@ assert.ok(
   mockGL.log.some(e => e[0] === 'uColor' && Math.abs(e[1] - 0.98) < 0.01 && Math.abs(e[2] - 0.99) < 0.01),
   'OST Dark Mode must render luminous white vector optotypes on additive waveguides'
 );
-console.log('  ✓ Samsung Moohan (0.9m) & XREAL Aura (4.0m + Additive OST Dark Mode) verified');
+
+// Verify AR Monocular Occlusion (OS): blanked eye hides Snellen chart, keeps transparent passthrough clear (0,0,0,0), AND still renders the 3D Control Panel!
+app.setEyeMode('OS');
+mockGL.log.length = 0;
+activeXRFrameCallback(120, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+const arClears = mockGL.log.filter(e => e[0] === 'clearColor');
+assert.equal(arClears[0][4], 0, 'AR open eye must clear alpha=0');
+assert.equal(arClears[1][4], 0, 'AR blanked eye must also clear alpha=0 (transparent passthrough, not opaque grey)');
+const arOptDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] > 60);
+assert.equal(arOptDraws.length, 1, 'AR blanked eye must hide Snellen optotypes (drawn only once for open eye)');
+// In AR OS mode: open eye draws (marginLabel + vrPanel = 2 textured/quad passes + panelBack + row/bars), blanked eye draws (occluderBadge + panelBack + vrPanel)!
+const arPanelBackDraws = mockGL.log.filter(
+  e => e[0] === 'uColor' && Math.abs(e[1] - 0.07) < 0.01 && Math.abs(e[2] - 0.09) < 0.01 && Math.abs(e[3] - 0.14) < 0.01
+);
+assert.equal(arPanelBackDraws.length, 2, 'AR blanked eye must STILL render the 3D Control Panel in stereo');
+app.setEyeMode('OU');
+console.log('  ✓ Samsung Galaxy XR (0.9m), XREAL Aura (4.0m + OST Dark Mode), & AR stereo control panel on blanked eye verified');
 
 // 3. Articulated XRHand Tracking: Direct 3D index-finger-tip poke on the floating 3D console Cycle button
 const cycleBeforeHand = app.state.cycleCount;
@@ -528,7 +579,7 @@ const eyeRayMat = new Float32Array([
   0, 1.65, 0, 1
 ]);
 
-// 4a. transient-pointer (Android XR Moohan/Aura & Vision Pro eye look + finger pinch)
+// 4a. transient-pointer (Android XR Galaxy XR / Aura & Vision Pro eye look + finger pinch)
 for (const fn of xrSessionListeners['select']) {
   fn({
     inputSource: { targetRaySpace: {}, targetRayMode: 'transient-pointer' },
