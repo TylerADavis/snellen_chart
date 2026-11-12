@@ -236,6 +236,7 @@ class MockSpeechRecognition {
   }
 }
 
+let mockTrackStopped = false;
 const winListeners = {};
 const windowObj = {
   isSecureContext: true,
@@ -243,7 +244,20 @@ const windowObj = {
   devicePixelRatio: 2,
   XRWebGLLayer: MockXRWebGLLayer,
   SpeechRecognition: MockSpeechRecognition,
+  setTimeout,
+  clearTimeout,
   navigator: {
+    permissions: {
+      query: async ({ name }) => ({
+        state: name === 'microphone' ? 'prompt' : 'granted',
+        onchange: null
+      })
+    },
+    mediaDevices: {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop: () => { mockTrackStopped = true; } }]
+      })
+    },
     xr: {
       isSessionSupported: async (mode) => mode === 'immersive-vr' || mode === 'immersive-ar',
       requestSession: async () => mockXRSession
@@ -607,4 +621,29 @@ activeXRFrameCallback(3150, {
 });
 assert.equal(app.state.cycleCount, cycleBeforeHand + 3, '1.1s Eye Gaze Dwell must click hovered 3D button hands-free');
 mockXRSession.end();
-console.log('  ✓ Eye tracking (transient-pointer Look+Pinch & 1.1s Gaze Dwell-Click) verified\n');
+console.log('  ✓ Eye tracking (transient-pointer Look+Pinch & 1.1s Gaze Dwell-Click) verified');
+
+// 5. Verify XR -> 2D Microphone Permission Handoff & 1-Tap Resume when mic permission is 'prompt'
+app.toggleVoiceInput(false);
+app.state.micPermission = 'prompt';
+mockTrackStopped = false;
+mockXRSession.environmentBlendMode = 'opaque';
+xrSessionListeners['end'] = [];
+await app.startXR('immersive-vr');
+assert.ok(app.state.xrSession, 'Should enter VR before testing mic handoff');
+
+// Tapping Voice inside VR when micPermission === 'prompt' must exit VR to reveal 2D browser prompt & show Resume modal!
+app.toggleVoiceInput(true);
+await new Promise(r => setTimeout(r, 15));
+assert.equal(app.state.xrSession, null, 'Must exit XR when mic permission is prompt so 2D browser dialog is visible');
+assert.equal(elements.get('micPermModal').style.display, 'flex', 'Must show 2D mic permission handoff modal');
+assert.equal(mockTrackStopped, true, 'Must release getUserMedia audio track immediately so SpeechRecognition gets exclusive mic');
+assert.equal(app.state.micPermission, 'granted', 'Mic permission should transition to granted after approval');
+
+// Clicking Resume XR button should re-enter VR with Voice enabled!
+elements.get('btnResumeXRAfterMic').dispatch('click');
+await new Promise(r => setTimeout(r, 15));
+assert.ok(app.state.xrSession, 'Clicking Resume XR must re-enter immersive session');
+assert.equal(app.state.voiceEnabled, true, 'Voice must remain enabled upon resuming XR');
+mockXRSession.end();
+console.log('  ✓ XR-to-2D Microphone Permission Handoff & 1-Tap Resume verified\n');
