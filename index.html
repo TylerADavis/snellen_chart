@@ -1,4 +1,15 @@
 <!DOCTYPE html>
+<!--
+  WebXR Snellen & Visual Acuity Chart
+  Copyright (c) 2026 Tyler Davis — Licensed under the MIT License (see LICENSE).
+
+  MEDICAL & NON-DIAGNOSTIC DISCLAIMER:
+  This software is for educational, experimental, and informational purposes only.
+  It is NOT a certified or regulated medical device and is NOT a substitute for a
+  comprehensive eye exam by a licensed optometrist or ophthalmologist. Headset fixed
+  focal planes, finite pixel density (PPD), and display luminance affect acuity
+  measurements compared to a clinical 20 ft (6 m) examination lane.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -525,6 +536,10 @@
         <strong>Keys:</strong> <code>Space</code> Cycle • <code>↑/↓</code> Row • <code>1–6</code> Chart • <code>E</code> Eye • <code>C</code> Recenter<br/>
         <strong>VR Controllers:</strong> Trigger/A = Cycle (or click 3D console) • Stick ↑/↓ = Row • Stick ←/→ = Chart • B/Y = Eye Occluder • Grip = Recenter
       </div>
+    </div>
+
+    <div class="warn-box" id="medicalDisclaimer" style="font-size:0.70rem; color:#cbd5e1; border-color:rgba(148, 163, 184, 0.28); background:rgba(148, 163, 184, 0.07);">
+      <strong>Medical Disclaimer:</strong> Educational &amp; experimental tool only — <strong>not a certified medical device</strong> or clinical diagnosis. Headset fixed focal distances, lens optics, and PPD limits differ from a 20 ft optometric exam. Consult an optometrist or ophthalmologist for medical advice or prescriptions.
     </div>
   </aside>
 
@@ -2233,11 +2248,15 @@ if (typeof window !== 'undefined') {
       );
 
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '500 23px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.font = '500 22px -apple-system, BlinkMacSystemFont, sans-serif';
       const scoreSummary = ['OD', 'OS', 'OU']
         .map(e => `${e}: ${state.scores[e] ? state.scores[e].snellen : '—'}`)
         .join('     |     ');
-      ctx.fillText(`Session Scorecard   —   ${scoreSummary}`, W * 0.5, 372);
+      ctx.fillText(`Session Scorecard   —   ${scoreSummary}`, W * 0.5, 352);
+
+      ctx.fillStyle = '#fde68a';
+      ctx.font = '500 18px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText('Informational estimate only — not a certified medical device or clinical eye exam.', W * 0.5, 402);
     }
 
     // Buttons
@@ -3576,7 +3595,8 @@ if (typeof window !== 'undefined') {
         : '';
       resBanner.innerHTML =
         `<strong>${res.eyeMode} Acuity: ${res.snellen}</strong> (${res.metric})<br/>` +
-        `LogMAR: <strong>${sign}${res.logMAR.toFixed(2)}</strong> • Decimal: <strong>${res.decimal.toFixed(2)}</strong> (${res.totalPrompts} trials)${hmdNote}`;
+        `LogMAR: <strong>${sign}${res.logMAR.toFixed(2)}</strong> • Decimal: <strong>${res.decimal.toFixed(2)}</strong> (${res.totalPrompts} trials)${hmdNote}` +
+        `<br/><span style="color:#94a3b8; font-size:0.70rem;">Informational estimate only — not a clinical diagnosis.</span>`;
     } else {
       btnStart.textContent = '▶ Start Exam';
       phaseBadge.textContent = 'Ready';

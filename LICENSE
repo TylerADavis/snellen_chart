@@ -1,0 +1,44 @@
+MIT License
+
+Copyright (c) 2026 Tyler Davis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice, this permission notice, and the Medical Disclaimer
+below shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+MEDICAL & NON-DIAGNOSTIC DEVICE DISCLAIMER
+================================================================================
+
+This Software is provided strictly for educational, experimental, and
+informational self-screening purposes. It is NOT a regulated or cleared medical
+device (such as under US FDA, EU MDR, or equivalent regulatory frameworks) and
+is NOT intended to diagnose, treat, cure, mitigate, or prevent any disease,
+refractive error, or ocular condition, nor to prescribe eyeglasses or contact
+lenses.
+
+Head-mounted displays (VR/AR headsets and optical see-through glasses) introduce
+device-specific optical factors—including fixed focal planes (e.g., ~0.9 m to
+4.0 m rather than clinical 6 m / 20 ft optical infinity), vergence-accommodation
+differences, finite angular pixel density (PPD / Nyquist limits), lens sweet
+spots, and ambient luminance variations—that differ from a calibrated clinical
+examination lane.
+
+Never disregard professional medical or optometric advice or delay seeking care
+because of results shown by this Software. Always consult a licensed
+optometrist, ophthalmologist, or qualified healthcare provider for comprehensive
+vision testing and eye health evaluation.

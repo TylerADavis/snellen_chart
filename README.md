@@ -78,3 +78,15 @@ WebXR browsers (Meta Quest Browser, Apple Vision Pro Safari, PCVR Chrome/Edge) *
 node tests/snellen.test.mjs
 node tests/xr_runtime.test.mjs
 ```
+
+---
+
+## Medical & Non-Diagnostic Disclaimer
+
+> **IMPORTANT:** This software is provided strictly for **educational, experimental, and informational self-screening purposes**. It is **not** a certified or regulated medical device (FDA, CE/MDR, or otherwise) and is **not** intended to diagnose, treat, or prescribe corrections for any refractive error or ocular condition.
+>
+> VR/AR headsets and optical see-through glasses have fixed optical focal planes (e.g., `~0.9 m` to `4.0 m` rather than `20 ft / 6 m` optical infinity), finite angular pixel density (PPD / Nyquist limits), and non-standardized luminance that differ from a clinical examination lane. Always consult a licensed optometrist or ophthalmologist for professional vision testing and eye care.
+
+## License
+
+Licensed under the [MIT License](LICENSE) (including the Medical & Non-Diagnostic Device Disclaimer).
