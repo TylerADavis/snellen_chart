@@ -433,6 +433,11 @@
         <input type="checkbox" id="chkLockAngle" checked />
       </label>
 
+      <label class="toggle" title="Optional: Smooths chart edges and sub-pixel bottom rows using analytic fwidth() shader anti-aliasing, 4-tap supersampled mipmaps, and boosted XR render scale">
+        <span>HQ Chart Smoothing (AA + Supersample)</span>
+        <input type="checkbox" id="chkHqSmooth" checked />
+      </label>
+
       <label class="toggle" title="Luminous white optotypes on dark/transparent background — ideal for Optical See-Through (OST) AR glasses like XREAL Aura where black is transparent">
         <span>OST Dark Mode (XREAL Aura / Additive AR)</span>
         <input type="checkbox" id="chkInvertPolarity" />
@@ -555,7 +560,7 @@
         Drag to look • Scroll to move closer/further • Press <strong>Space</strong> to shuffle chart
       </div>
       <div class="pill" id="ppdBadge">
-        Vector 5×5 Optotypes • Native MSAA
+        HQ Analytic AA • 4× RGSS Optotypes
       </div>
     </div>
 
@@ -617,12 +622,23 @@ const SnellenCore = (() => {
     return theta / ARCMIN_TO_RAD;
   }
 
-  // Estimate horizontal center PPD from WebXR projectionMatrix & viewport pixel width
-  function estimateHmdPPD(projectionMatrix, viewportWidth) {
+  // Compute exact asymmetric-frustum horizontal FOV & on-axis center render-buffer PPD (at theta = 0 deg)
+  function estimateHmdOptics(projectionMatrix, viewportWidth) {
     if (!projectionMatrix || !projectionMatrix[0] || !viewportWidth) return null;
-    const halfFovRad = Math.atan(1 / Math.abs(projectionMatrix[0]));
-    const fullFovDeg = 2 * halfFovRad * (180 / Math.PI);
-    return viewportWidth / fullFovDeg;
+    const p00 = Math.abs(projectionMatrix[0]);
+    const p02 = projectionMatrix.length > 8 ? (projectionMatrix[8] || 0) : 0;
+    const tanRight = (1 + p02) / p00;
+    const tanLeft = (1 - p02) / p00;
+    const hFovDeg = (Math.atan(tanLeft) + Math.atan(tanRight)) * (180 / Math.PI);
+    const centerPPD = 0.5 * viewportWidth * p00 * DEG_TO_RAD;
+    const avgPPD = hFovDeg > 0 ? (viewportWidth / hFovDeg) : centerPPD;
+    return { centerPPD, avgPPD, hFovDeg };
+  }
+
+  // Estimate horizontal on-axis center render PPD from WebXR projectionMatrix & viewport pixel width
+  function estimateHmdPPD(projectionMatrix, viewportWidth) {
+    const opt = estimateHmdOptics(projectionMatrix, viewportWidth);
+    return opt ? opt.centerPPD : null;
   }
 
   // Nyquist acuity limit: 20/20 requires 1' stroke + 1' gap = 30 cycles/deg = 60 PPD
@@ -1567,6 +1583,7 @@ const SnellenCore = (() => {
     optotypeHeightMeters,
     strokeWidthMeters,
     subtendedArcmin,
+    estimateHmdOptics,
     estimateHmdPPD,
     nyquistSnellenDenom,
     generateChartData,
@@ -1603,6 +1620,7 @@ if (typeof window !== 'undefined') {
     cycleCount: 1,
     targetDistance: 1.5,     // meters (default 1.5m VR focal plane match)
     lockAngularSize: true,   // auto-compensate live eye distance so 20/20 === 5.00'
+    hqSmoothing: true,       // Optional HQ Chart Smoothing (analytic fwidth() AA + 4-tap RGSS atlas + XR supersampling)
     invertPolarity: false,   // OST Dark Mode (white-on-black/transparent for XREAL Aura & additive AR)
     gazeDwellEnabled: false, // 1.1s hands-free eye/head gaze dwell-to-click on 3D console
     eyeMode: 'OU',           // 'OU' | 'OD' | 'OS'
@@ -1635,6 +1653,8 @@ if (typeof window !== 'undefined') {
     liveEyeDistance: 1.5,
     appliedScale: 1.0,
     hmdPPD: null,
+    hmdFovDeg: null,
+    xrFramebufferScale: null,
     xrSession: null,
     xrMode: null,
     needsRecenterInXR: false,
@@ -1840,20 +1860,86 @@ if (typeof window !== 'undefined') {
     }`
   ) : null;
 
+  // Analytic pixel-box coverage shader for smooth, stair-step-free Snellen chart borders & thin clinical bars
+  const aaQuadProg = gl ? compileProgram(
+    `#version 300 es
+    layout(location = 0) in vec3 aPos;
+    uniform mat4 uMVP;
+    out vec2 vLocal;
+    void main() {
+      vLocal = aPos.xy;
+      gl_Position = uMVP * vec4(aPos, 1.0);
+    }`,
+    `#version 300 es
+    precision highp float;
+    in vec2 vLocal;
+    uniform vec4 uColor;
+    out vec4 outColor;
+    void main() {
+      vec2 fw = max(fwidth(vLocal), vec2(1e-5));
+      vec2 lo = max(vec2(-0.5), vLocal - 0.5 * fw);
+      vec2 hi = min(vec2(0.5), vLocal + 0.5 * fw);
+      vec2 covXY = max(vec2(0.0), (hi - lo) / fw);
+      float cov = covXY.x * covXY.y;
+      if (cov <= 0.002) discard;
+      outColor = vec4(uColor.rgb, uColor.a * cov);
+    }`
+  ) : null;
+
+  // 4-Tap Rotated-Grid Super-Sampled (RGSS) Anisotropic Coverage Shader for sub-pixel bottom-row optotypes
+  const hqOptotypeProg = gl ? compileProgram(
+    `#version 300 es
+    layout(location = 0) in vec3 aPos;
+    layout(location = 1) in vec2 aUV;
+    uniform mat4 uMVP;
+    out vec2 vUV;
+    void main() {
+      vUV = aUV;
+      gl_Position = uMVP * vec4(aPos, 1.0);
+    }`,
+    `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uTex;
+    uniform vec4 uColor;
+    out vec4 outColor;
+    void main() {
+      vec2 dx = dFdx(vUV);
+      vec2 dy = dFdy(vUV);
+      float cov = 0.25 * (
+        texture(uTex, vUV + 0.125 * dx + 0.375 * dy).a +
+        texture(uTex, vUV - 0.125 * dx - 0.375 * dy).a +
+        texture(uTex, vUV + 0.375 * dx - 0.125 * dy).a +
+        texture(uTex, vUV - 0.375 * dx + 0.125 * dy).a
+      );
+      if (cov <= 0.002) discard;
+      outColor = vec4(uColor.rgb, uColor.a * cov);
+    }`
+  ) : null;
+
   const uColorMVP = gl ? gl.getUniformLocation(colorProg, 'uMVP') : null;
   const uColorVal = gl ? gl.getUniformLocation(colorProg, 'uColor') : null;
   const uTexMVP = gl ? gl.getUniformLocation(texProg, 'uMVP') : null;
   const uTexSampler = gl ? gl.getUniformLocation(texProg, 'uTex') : null;
   const uTexOpacity = gl ? gl.getUniformLocation(texProg, 'uOpacity') : null;
+  const uAaMVP = gl ? gl.getUniformLocation(aaQuadProg, 'uMVP') : null;
+  const uAaColor = gl ? gl.getUniformLocation(aaQuadProg, 'uColor') : null;
+  const uHqOptMVP = gl ? gl.getUniformLocation(hqOptotypeProg, 'uMVP') : null;
+  const uHqOptTex = gl ? gl.getUniformLocation(hqOptotypeProg, 'uTex') : null;
+  const uHqOptColor = gl ? gl.getUniformLocation(hqOptotypeProg, 'uColor') : null;
 
   // Reusable unit quad [-0.5, 0.5] x [-0.5, 0.5] on Z=0
   let quadVAO = null;
+  let aaQuadVAO = null;
   let texQuadVAO = null;
   let roomGridVAO = null;
   let roomGridVertCount = 0;
   let chartOptotypesVAO = null;
   let chartOptotypesVBO = null;
   let chartOptotypesVertCount = 0;
+  let chartHqQuadsVAO = null;
+  let chartHqQuadsVBO = null;
+  let chartHqVertCount = 0;
 
   if (gl) {
     // Solid unit quad
@@ -1864,6 +1950,18 @@ if (typeof window !== 'undefined') {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
       -0.5, -0.5, 0,   0.5, -0.5, 0,   0.5,  0.5, 0,
       -0.5, -0.5, 0,   0.5,  0.5, 0,  -0.5,  0.5, 0
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    // Expanded [-1.0, +1.0] quad for analytic fwidth() edge & sub-pixel bar coverage
+    aaQuadVAO = gl.createVertexArray();
+    gl.bindVertexArray(aaQuadVAO);
+    const aaqBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, aaqBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1.0, -1.0, 0,   1.0, -1.0, 0,   1.0,  1.0, 0,
+      -1.0, -1.0, 0,   1.0,  1.0, 0,  -1.0,  1.0, 0
     ]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
@@ -1903,7 +2001,7 @@ if (typeof window !== 'undefined') {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
-    // Dynamic batched optotype triangle buffer
+    // Dynamic batched optotype triangle buffer (raw hard-edged 5x5 vector triangles)
     chartOptotypesVAO = gl.createVertexArray();
     gl.bindVertexArray(chartOptotypesVAO);
     chartOptotypesVBO = gl.createBuffer();
@@ -1911,6 +2009,17 @@ if (typeof window !== 'undefined') {
     gl.bufferData(gl.ARRAY_BUFFER, 4096, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    // Dynamic batched HQ anti-aliased optotype quad buffer (x, y, z, u, v)
+    chartHqQuadsVAO = gl.createVertexArray();
+    gl.bindVertexArray(chartHqQuadsVAO);
+    chartHqQuadsVBO = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, chartHqQuadsVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, 4096, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
 
     gl.bindVertexArray(null);
   }
@@ -1973,6 +2082,62 @@ if (typeof window !== 'undefined') {
   }
   updateOccluderTexture('EYE OCCLUDED', 'Monocular Visual Acuity Test');
 
+  // High-DPI 2048x1024 power-of-two optotype alpha-coverage atlas for optional HQ Chart Smoothing
+  // (8x4 cells of 256x256 px with 24 px guard band around a 208x208 [0..5]x[0..5] glyph area)
+  const HQ_ATLAS_W = 2048;
+  const HQ_ATLAS_H = 1024;
+  const HQ_CELL_PX = 256;
+  const HQ_PAD_PX = 24;
+  const HQ_INNER_PX = HQ_CELL_PX - 2 * HQ_PAD_PX; // 208 px
+  const HQ_GLYPH_IDS = [
+    'C', 'D', 'E', 'F', 'H', 'K', 'L', 'N',
+    'O', 'P', 'R', 'S', 'T', 'V', 'Z', 'TUMBLING_E',
+    'LANDOLT_C', '2', '3', '4', '5', '6', '8', '9'
+  ];
+  const hqGlyphUVMap = new Map();
+  const hqOptotypeAtlas = createCanvasTexture(HQ_ATLAS_W, HQ_ATLAS_H);
+  {
+    const { ctx, canvas } = hqOptotypeAtlas;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff'; // Sampled via .a coverage channel so zero dark/light halo occurs
+    HQ_GLYPH_IDS.forEach((gid, idx) => {
+      const col = idx % 8;
+      const row = Math.floor(idx / 8);
+      const cellX = col * HQ_CELL_PX;
+      const cellY = row * HQ_CELL_PX;
+      const glyph = SnellenCore.getGlyph(gid);
+      const pxPerUnit = HQ_INNER_PX / 5.0;
+      for (const poly of glyph.polys) {
+        ctx.beginPath();
+        poly.forEach(([gx, gy], pIdx) => {
+          const px = cellX + HQ_PAD_PX + gx * pxPerUnit;
+          const py = cellY + HQ_PAD_PX + (5.0 - gy) * pxPerUnit;
+          if (pIdx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.fill();
+      }
+      hqGlyphUVMap.set(gid, {
+        u0: cellX / HQ_ATLAS_W,
+        u1: (cellX + HQ_CELL_PX) / HQ_ATLAS_W,
+        vTop: cellY / HQ_ATLAS_H,
+        vBot: (cellY + HQ_CELL_PX) / HQ_ATLAS_H
+      });
+    });
+    hqOptotypeAtlas.upload();
+    if (gl && hqOptotypeAtlas.tex && typeof gl.getExtension === 'function') {
+      const aniso =
+        gl.getExtension('EXT_texture_filter_anisotropic') ||
+        gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
+      if (aniso && typeof gl.getParameter === 'function' && typeof gl.texParameterf === 'function') {
+        const maxAniso = gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 4;
+        gl.bindTexture(gl.TEXTURE_2D, hqOptotypeAtlas.tex);
+        gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, maxAniso));
+      }
+    }
+  }
+
   // ==========================================================================
   // Rebuild Physical Chart Mesh & Margin Labels
   // ==========================================================================
@@ -1987,8 +2152,10 @@ if (typeof window !== 'undefined') {
       state.activeColIdx
     );
 
-    // Batch all optotypes into one crisp world-scaled local mesh (on z = 0)
+    // Batch all optotypes into both raw 5x5 vector triangles AND HQ coverage-atlas quads (on z = 0)
     const verts = [];
+    const hqVerts = [];
+    const padRatio = HQ_CELL_PX / HQ_INNER_PX;
     for (const op of currentLayout.optotypes) {
       const glyph = SnellenCore.getGlyph(op.glyph);
       const scale = op.size / 5.0; // [0..5] -> [-size/2 .. +size/2]
@@ -2003,12 +2170,33 @@ if (typeof window !== 'undefined') {
         const ry = lx * s + ly * c;
         verts.push(op.cx + rx, op.cy + ry, 0.0);
       }
+
+      const uv = hqGlyphUVMap.get(op.glyph);
+      if (uv) {
+        const hs = 0.5 * op.size * padRatio;
+        const corners = [
+          [-hs, -hs, uv.u0, uv.vBot],
+          [ hs, -hs, uv.u1, uv.vBot],
+          [ hs,  hs, uv.u1, uv.vTop],
+          [-hs, -hs, uv.u0, uv.vBot],
+          [ hs,  hs, uv.u1, uv.vTop],
+          [-hs,  hs, uv.u0, uv.vTop]
+        ];
+        for (const [lx, ly, u, v] of corners) {
+          const rx = lx * c - ly * s;
+          const ry = lx * s + ly * c;
+          hqVerts.push(op.cx + rx, op.cy + ry, 0.0, u, v);
+        }
+      }
     }
 
     chartOptotypesVertCount = verts.length / 3;
+    chartHqVertCount = hqVerts.length / 5;
     if (gl) {
       gl.bindBuffer(gl.ARRAY_BUFFER, chartOptotypesVBO);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, chartHqQuadsVBO);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(hqVerts), gl.DYNAMIC_DRAW);
     }
 
     // Render crisp acuity side labels & chart header onto marginLabelLayer
@@ -2169,16 +2357,17 @@ if (typeof window !== 'undefined') {
     addBtn('lock_angle', 'Lock 5′ Angle', 735, 470, 245, 72, () => state.lockAngularSize, null, () => setLockAngle(!state.lockAngularSize));
     addBtn('recenter', 'Recenter Chart', 995, 470, 245, 72, () => false, 'blue', () => recenterChart());
 
-    // Row 5: OST Dark Mode (XREAL Aura), Gaze Dwell, Room Lighting, Landolt 4/8, & Exit Session
-    addBtn('ost_dark', 'OST Dark Mode', 40, 578, 232, 64, () => state.invertPolarity, null, () => setInvertPolarity(!state.invertPolarity));
-    addBtn('gaze_dwell', 'Gaze Dwell', 286, 578, 210, 64, () => state.gazeDwellEnabled, null, () => setGazeDwell(!state.gazeDwellEnabled));
-    addBtn('theme', 'Room Light', 510, 578, 204, 64, () => false, null, () => cycleEnvTheme());
-    addBtn('landolt_dir', 'Landolt: 4/8', 728, 578, 224, 64, () => state.landolt8, null, () => {
+    // Row 5: HQ Chart Smoothing, OST Dark Mode, Gaze Dwell, Room Lighting, Landolt 4/8, & Exit Session
+    addBtn('hq_smooth', 'HQ Smooth', 40, 578, 190, 64, () => state.hqSmoothing, null, () => setHqSmoothing(!state.hqSmoothing));
+    addBtn('ost_dark', 'OST Dark', 242, 578, 190, 64, () => state.invertPolarity, null, () => setInvertPolarity(!state.invertPolarity));
+    addBtn('gaze_dwell', 'Gaze Dwell', 444, 578, 190, 64, () => state.gazeDwellEnabled, null, () => setGazeDwell(!state.gazeDwellEnabled));
+    addBtn('theme', 'Room Light', 646, 578, 190, 64, () => false, null, () => cycleEnvTheme());
+    addBtn('landolt_dir', 'Landolt 4/8', 848, 578, 190, 64, () => state.landolt8, null, () => {
       state.landolt8 = !state.landolt8;
       if (state.chartTypeId !== 'landolt_c') setChartType('landolt_c');
       else cycleChart();
     });
-    addBtn('exit_xr', 'Exit VR / AR', 966, 578, 274, 64, () => false, 'red', () => {
+    addBtn('exit_xr', 'Exit VR / AR', 1050, 578, 190, 64, () => false, 'red', () => {
       if (state.xrSession) state.xrSession.end();
     });
   }
@@ -2219,12 +2408,12 @@ if (typeof window !== 'undefined') {
       : `WebXR Clinical Acuity  •  Row: ${activeRow.label} (${activeRow.metric})`;
     ctx.fillText(headerTitle, 42, 66);
 
-    // Live distance & PPD telemetry badge
+    // Live distance & on-axis Render-Buffer PPD telemetry badge
     ctx.textAlign = 'right';
     ctx.font = '600 24px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.fillStyle = '#93c5fd';
     const ppdTxt = state.hmdPPD
-      ? `  |  HMD ~${state.hmdPPD.toFixed(0)} PPD (~20/${SnellenCore.nyquistSnellenDenom(state.hmdPPD)})`
+      ? `  |  Render ~${state.hmdPPD.toFixed(0)} PPD (~20/${SnellenCore.nyquistSnellenDenom(state.hmdPPD)})`
       : '';
     ctx.fillText(
       `Dist: ${state.liveEyeDistance.toFixed(2)} m  |  20/20 = 5.00′${ppdTxt}`,
@@ -2487,6 +2676,40 @@ if (typeof window !== 'undefined') {
     panelDirty = true;
     updateSidebarUI();
     if (state.viewMode === '2d') render2DChart();
+  }
+
+  function applyXRFramebufferScale(session) {
+    if (!session || !gl || typeof XRWebGLLayer === 'undefined') return;
+    const nativeScale = (typeof XRWebGLLayer.getNativeFramebufferScaleFactor === 'function')
+      ? XRWebGLLayer.getNativeFramebufferScaleFactor(session)
+      : 1.0;
+    const targetScale = state.hqSmoothing ? Math.min(2.0, nativeScale * 1.35) : nativeScale;
+    const isBlendAR = session.environmentBlendMode === 'additive' || session.environmentBlendMode === 'alpha-blend';
+    try {
+      const baseLayer = new XRWebGLLayer(session, gl, {
+        antialias: true,
+        alpha: state.xrMode === 'immersive-ar' || isBlendAR,
+        framebufferScaleFactor: targetScale
+      });
+      session.updateRenderState({
+        baseLayer,
+        depthNear: 0.12,
+        depthFar: 30.0
+      });
+      state.xrFramebufferScale = targetScale;
+      state.hmdPPD = null; // Force fresh on-axis Render PPD readout on next XR frame
+    } catch {
+      // Keep existing baseLayer if runtime disallows mid-session layer replacement
+    }
+  }
+
+  function setHqSmoothing(enabled) {
+    state.hqSmoothing = !!enabled;
+    if (state.xrSession) {
+      applyXRFramebufferScale(state.xrSession);
+    }
+    panelDirty = true;
+    updateSidebarUI();
   }
 
   function setInvertPolarity(inverted) {
@@ -2894,6 +3117,19 @@ if (typeof window !== 'undefined') {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
+  // Analytic fwidth() anti-aliased quad when HQ Chart Smoothing is enabled (falls back to raw hard-edged quad when off)
+  function drawChartQuad(vpMatrix, modelMatrix, r, g, b, a = 1.0) {
+    if (!state.hqSmoothing || !aaQuadProg) {
+      drawSolidQuad(vpMatrix, modelMatrix, r, g, b, a);
+      return;
+    }
+    gl.useProgram(aaQuadProg);
+    gl.uniformMatrix4fv(uAaMVP, false, M4.multiply(vpMatrix, modelMatrix));
+    gl.uniform4f(uAaColor, r, g, b, a);
+    gl.bindVertexArray(aaQuadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
   function drawTexturedQuad(vpMatrix, modelMatrix, tex, opacity = 1.0) {
     gl.useProgram(texProg);
     gl.uniformMatrix4fv(uTexMVP, false, M4.multiply(vpMatrix, modelMatrix));
@@ -2989,16 +3225,16 @@ if (typeof window !== 'undefined') {
           M4.multiply(M4.translation(0, 0, -0.004), M4.scaling(bw + bezel * 2, bh + bezel * 2, 1))
         );
         if (state.invertPolarity) {
-          drawSolidQuad(vp, bezelModel, 0.06, 0.08, 0.12, 0.94);
+          drawChartQuad(vp, bezelModel, 0.06, 0.08, 0.12, 0.94);
         } else {
-          drawSolidQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
+          drawChartQuad(vp, bezelModel, 0.11, 0.14, 0.19, 1.0);
         }
 
         const whiteModel = M4.multiply(chartBase, M4.scaling(bw, bh, 1));
         if (state.invertPolarity) {
-          drawSolidQuad(vp, whiteModel, 0.03, 0.038, 0.055, 0.97);
+          drawChartQuad(vp, whiteModel, 0.03, 0.038, 0.055, 0.97);
         } else {
-          drawSolidQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
+          drawChartQuad(vp, whiteModel, 0.985, 0.99, 0.995, 1.0);
         }
       }
 
@@ -3013,7 +3249,7 @@ if (typeof window !== 'undefined') {
             chartBase,
             M4.multiply(M4.translation(0, rl.centerY, 0.0002), M4.scaling(bw * 0.95, rl.height * 1.38, 1))
           );
-          drawSolidQuad(vp, hlModel, 0.23, 0.51, 0.96, state.invertPolarity ? 0.16 : 0.10);
+          drawChartQuad(vp, hlModel, 0.23, 0.51, 0.96, state.invertPolarity ? 0.16 : 0.10);
         }
         if (rl.row.barColor && state.layoutMode === 'full') {
           const [cr, cg, cb] = rl.row.barColor;
@@ -3025,7 +3261,7 @@ if (typeof window !== 'undefined') {
               M4.scaling(rl.rowWidth * 1.08, barH, 1)
             )
           );
-          drawSolidQuad(vp, barModel, cr, cg, cb, 1.0);
+          drawChartQuad(vp, barModel, cr, cg, cb, 1.0);
         }
       }
 
@@ -3043,9 +3279,9 @@ if (typeof window !== 'undefined') {
             M4.multiply(M4.translation(targetOp.cx, ptrY, 0.00035), M4.scaling(ptrW, ptrH, 1))
           );
           if (state.invertPolarity) {
-            drawSolidQuad(vp, ptrModel, 0.38, 0.65, 0.98, 1.0);
+            drawChartQuad(vp, ptrModel, 0.38, 0.65, 0.98, 1.0);
           } else {
-            drawSolidQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
+            drawChartQuad(vp, ptrModel, 0.15, 0.42, 0.96, 0.95);
           }
         }
       }
@@ -3058,18 +3294,27 @@ if (typeof window !== 'undefined') {
       );
       drawTexturedQuad(vp, labelModel, marginLabelLayer.tex, 1.0);
 
-      // Razor-sharp vector 5x5 optotype mesh (pure black on lightbox, or luminous crisp white in OST Dark Mode)
+      // Optotype pass: HQ 4-Tap RGSS Anisotropic Coverage Atlas (when HQ Smooth ON) or Raw 5x5 Vector Mesh (when OFF)
       gl.polygonOffset(-3.0, -3.0);
       const optModel = M4.multiply(chartBase, M4.translation(0, 0, 0.0006));
-      gl.useProgram(colorProg);
-      gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, optModel));
-      if (state.invertPolarity) {
-        gl.uniform4f(uColorVal, 0.98, 0.99, 1.0, 1.0);
+      const optMVP = M4.multiply(vp, optModel);
+      const [or, og, ob] = state.invertPolarity ? [0.98, 0.99, 1.0] : [0.045, 0.05, 0.06];
+      if (state.hqSmoothing && hqOptotypeProg && hqOptotypeAtlas.tex && chartHqVertCount > 0) {
+        gl.useProgram(hqOptotypeProg);
+        gl.uniformMatrix4fv(uHqOptMVP, false, optMVP);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, hqOptotypeAtlas.tex);
+        gl.uniform1i(uHqOptTex, 0);
+        gl.uniform4f(uHqOptColor, or, og, ob, 1.0);
+        gl.bindVertexArray(chartHqQuadsVAO);
+        gl.drawArrays(gl.TRIANGLES, 0, chartHqVertCount);
       } else {
-        gl.uniform4f(uColorVal, 0.045, 0.05, 0.06, 1.0);
+        gl.useProgram(colorProg);
+        gl.uniformMatrix4fv(uColorMVP, false, optMVP);
+        gl.uniform4f(uColorVal, or, og, ob, 1.0);
+        gl.bindVertexArray(chartOptotypesVAO);
+        gl.drawArrays(gl.TRIANGLES, 0, chartOptotypesVertCount);
       }
-      gl.bindVertexArray(chartOptotypesVAO);
-      gl.drawArrays(gl.TRIANGLES, 0, chartOptotypesVertCount);
 
       gl.disable(gl.POLYGON_OFFSET_FILL);
     }
@@ -3324,22 +3569,7 @@ if (typeof window !== 'undefined') {
       }
 
       await gl.makeXRCompatible();
-      const nativeScale = (typeof XRWebGLLayer.getNativeFramebufferScaleFactor === 'function')
-        ? XRWebGLLayer.getNativeFramebufferScaleFactor(session)
-        : 1.0;
-
-      const isBlendAR = session.environmentBlendMode === 'additive' || session.environmentBlendMode === 'alpha-blend';
-      const baseLayer = new XRWebGLLayer(session, gl, {
-        antialias: true,
-        alpha: mode === 'immersive-ar' || isBlendAR,
-        framebufferScaleFactor: nativeScale
-      });
-
-      session.updateRenderState({
-        baseLayer,
-        depthNear: 0.12,
-        depthFar: 30.0
-      });
+      applyXRFramebufferScale(session);
 
       try {
         xrRefSpace = await session.requestReferenceSpace('local-floor');
@@ -3625,10 +3855,12 @@ if (typeof window !== 'undefined') {
     const glLayer = session.renderState.baseLayer;
     if (pose.views.length > 0) {
       const vp0 = glLayer.getViewport(pose.views[0]);
-      const estPPD = SnellenCore.estimateHmdPPD(pose.views[0].projectionMatrix, vp0.width);
-      if (estPPD && (!state.hmdPPD || Math.abs(estPPD - state.hmdPPD) > 0.5)) {
-        state.hmdPPD = estPPD;
+      const opt = SnellenCore.estimateHmdOptics(pose.views[0].projectionMatrix, vp0.width);
+      if (opt && (!state.hmdPPD || Math.abs(opt.centerPPD - state.hmdPPD) > 0.3)) {
+        state.hmdPPD = opt.centerPPD;
+        state.hmdFovDeg = opt.hFovDeg;
         panelDirty = true;
+        updateSidebarUI();
       }
     }
 
@@ -3702,10 +3934,17 @@ if (typeof window !== 'undefined') {
     }
 
     document.getElementById('chkLockAngle').checked = state.lockAngularSize;
+    document.getElementById('chkHqSmooth').checked = state.hqSmoothing;
     document.getElementById('chkInvertPolarity').checked = state.invertPolarity;
     document.getElementById('chkGazeDwell').checked = state.gazeDwellEnabled;
     const themeNames = ['Room: Dim Clinic', 'Room: Dark Room', 'Room: Bright Clinic'];
     document.getElementById('btnEnvTheme').textContent = themeNames[state.envTheme];
+
+    const ppdBadgeEl = document.getElementById('ppdBadge');
+    const aaLabel = state.hqSmoothing ? 'HQ Analytic AA • 4× RGSS' : 'Raw Vector 5×5 • MSAA';
+    ppdBadgeEl.textContent = state.hmdPPD
+      ? `${aaLabel} • Render ~${state.hmdPPD.toFixed(0)} PPD`
+      : aaLabel;
 
     // Pre-XR Microphone Permission quick-approve button right below Enter VR / Enter AR
     const btnPreMic = document.getElementById('btnPreApproveMic');
@@ -3772,7 +4011,7 @@ if (typeof window !== 'undefined') {
       const res = state.exam.result;
       const sign = res.logMAR >= 0 ? '+' : '';
       const hmdNote = (state.hmdPPD && res.passedRowIdx >= 0 && state.chartData.rows[res.passedRowIdx].denom <= SnellenCore.nyquistSnellenDenom(state.hmdPPD) + 10)
-        ? `<br/><span style="color:#fde68a;">Note: Near HMD pixel ceiling (~${state.hmdPPD.toFixed(0)} PPD).</span>`
+        ? `<br/><span style="color:#fde68a;">Note: Near HMD render-buffer Nyquist ceiling (Render ~${state.hmdPPD.toFixed(0)} PPD).</span>`
         : '';
       resBanner.innerHTML =
         `<strong>${res.eyeMode} Acuity: ${res.snellen}</strong> (${res.metric})<br/>` +
@@ -3859,6 +4098,7 @@ if (typeof window !== 'undefined') {
     if (e.key === 'Enter') applyCustomDist();
   });
   document.getElementById('chkLockAngle').addEventListener('change', e => setLockAngle(e.target.checked));
+  document.getElementById('chkHqSmooth').addEventListener('change', e => setHqSmoothing(e.target.checked));
   document.getElementById('chkInvertPolarity').addEventListener('change', e => setInvertPolarity(e.target.checked));
   document.getElementById('chkGazeDwell').addEventListener('change', e => setGazeDwell(e.target.checked));
   document.getElementById('btnRecenter').addEventListener('click', () => {
@@ -3974,6 +4214,8 @@ if (typeof window !== 'undefined') {
       setLayoutMode(modes[(modes.indexOf(state.layoutMode) + 1) % modes.length]);
     } else if (k === 'l') {
       setLockAngle(!state.lockAngularSize);
+    } else if (k === 'h') {
+      setHqSmoothing(!state.hqSmoothing);
     } else if (k === 'c') {
       if (state.xrSession) state.needsRecenterInXR = true;
       else {
@@ -3991,6 +4233,7 @@ if (typeof window !== 'undefined') {
     setChartType,
     setLayoutMode,
     setTargetDistance,
+    setHqSmoothing,
     setInvertPolarity,
     setGazeDwell,
     setEyeMode,

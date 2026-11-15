@@ -117,10 +117,15 @@ function makeMockWebGL2() {
     createTexture: () => ({ id: objId++ }),
     bindTexture: () => {},
     texParameteri: () => {},
+    texParameterf: () => {},
     texImage2D: () => {},
     generateMipmap: () => {},
+    getExtension: name => (name === 'EXT_texture_filter_anisotropic'
+      ? { MAX_TEXTURE_MAX_ANISOTROPY_EXT: 0x84FF, TEXTURE_MAX_ANISOTROPY_EXT: 0x84FE }
+      : null),
+    getParameter: () => 8,
     activeTexture: () => {},
-    useProgram: () => {},
+    useProgram: p => log.push(['useProgram', p && p.id]),
     uniformMatrix4fv: () => {},
     uniform4f: (_l, r, g, b, a) => log.push(['uColor', r, g, b, a]),
     uniform1i: () => {},
@@ -320,13 +325,17 @@ assert.equal(documentObj.getElementById('btnEnterVR').disabled, false, 'VR butto
 assert.equal(documentObj.getElementById('btnEnterAR').disabled, false, 'AR button should be enabled when AR supported');
 console.log('  ✓ DOM bindings verified & WebXR VR/AR capability detection enabled buttons');
 
-// Start WebXR immersive-vr session
+// Start WebXR immersive-vr session (HQ Chart Smoothing defaults ON => 1.35 * 1.35 = 1.8225x supersampled scale)
 await app.startXR('immersive-vr');
 assert.ok(app.state.xrSession, 'XR session should be active');
-assert.equal(mockXRSession.renderState.baseLayer.opts.framebufferScaleFactor, 1.35, 'Should request native HMD framebuffer scale');
-console.log('  ✓ WebXR session started at 100% native HMD framebuffer resolution scale');
+assert.equal(app.state.hqSmoothing, true, 'HQ Chart Smoothing should default to ON');
+assert.ok(
+  Math.abs(mockXRSession.renderState.baseLayer.opts.framebufferScaleFactor - 1.35 * 1.35) < 1e-6,
+  'Should request supersampled HMD framebuffer scale when HQ Chart Smoothing is enabled'
+);
+console.log('  ✓ WebXR session started with HQ supersampled HMD framebuffer scale');
 
-// Build a realistic stereo XRViewerPose (IPD = 64mm: left = -0.032, right = +0.032, height = 1.65m, z = 0)
+// Build a realistic asymmetric stereo XRViewerPose (IPD = 64mm: left = -0.032, right = +0.032, height = 1.65m, z = 0)
 function makePose(zPos = 0) {
   const identityMat = new Float32Array([
     1, 0, 0, 0,
@@ -336,7 +345,12 @@ function makePose(zPos = 0) {
   ]);
   const makeView = (eye, xOffset) => ({
     eye,
-    projectionMatrix: new Float32Array([1.0, 0, 0, 0,  0, 1.0, 0, 0,  0, 0, -1, -1,  0, 0, -0.2, 0]),
+    projectionMatrix: new Float32Array([
+      1.18, 0, 0, 0,
+      0, 1.12, 0, 0,
+      eye === 'left' ? -0.08 : 0.08, 0, -1, -1,
+      0, 0, -0.2, 0
+    ]),
     transform: {
       position: { x: xOffset, y: 1.65, z: zPos },
       inverse: {
@@ -645,5 +659,39 @@ elements.get('btnResumeXRAfterMic').dispatch('click');
 await new Promise(r => setTimeout(r, 15));
 assert.ok(app.state.xrSession, 'Clicking Resume XR must re-enter immersive session');
 assert.equal(app.state.voiceEnabled, true, 'Voice must remain enabled upon resuming XR');
+
+// 6. Verify Optional HQ Chart Smoothing Toggle (ON: 4-tap RGSS atlas + fwidth() AA + 1.35x supersample vs OFF: raw 5x5 vector mesh + native 1.0x scale)
+app.setEyeMode('OU');
+app.setLayoutMode('full');
+app.setChartType('snellen');
+mockGL.log.length = 0;
+activeXRFrameCallback(4000, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+const hqOptDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] === 312);
+assert.equal(hqOptDraws.length, 2, 'HQ Smoothing ON must render 52 Snellen optotypes as 312 RGSS coverage-atlas vertices per eye');
+
+// Toggle HQ Smoothing OFF live inside VR
+app.setHqSmoothing(false);
+assert.equal(app.state.hqSmoothing, false);
+assert.equal(elements.get('chkHqSmooth').checked, false, '2D sidebar checkbox must stay synced when HQ Smoothing toggled');
+assert.equal(mockXRSession.renderState.baseLayer.opts.framebufferScaleFactor, 1.35, 'Disabling HQ Smoothing must revert to native HMD scale');
+mockGL.log.length = 0;
+activeXRFrameCallback(4016, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+const rawOptDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] > 600);
+assert.equal(rawOptDraws.length, 2, 'HQ Smoothing OFF must fall back to raw 5x5 vector triangle mesh per eye');
+
+// Toggle HQ Smoothing back ON via checkbox dispatch
+elements.get('chkHqSmooth').checked = true;
+elements.get('chkHqSmooth').dispatch('change', { target: { checked: true } });
+assert.equal(app.state.hqSmoothing, true);
+assert.ok(Math.abs(mockXRSession.renderState.baseLayer.opts.framebufferScaleFactor - 1.35 * 1.35) < 1e-6);
+
 mockXRSession.end();
-console.log('  ✓ XR-to-2D Microphone Permission Handoff & 1-Tap Resume verified\n');
+console.log('  ✓ XR-to-2D Microphone Permission Handoff & Optional HQ Chart Smoothing toggle verified\n');

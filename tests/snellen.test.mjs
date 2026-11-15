@@ -188,11 +188,25 @@ test('Physical layout engine correctly supports Full Chart, Single Line, and Sin
   assert.equal(single.optotypes[0].cy, 0);
 });
 
-test('HMD PPD & Nyquist acuity estimator matches optical theory', () => {
-  // 90 deg horizontal FOV -> P[0] = 1 / tan(45 deg) = 1.0; 2250 px width => 25.0 PPD => 20/48 Nyquist
-  const ppd = SnellenCore.estimateHmdPPD([1.0, 0, 0, 0], 2250);
-  assert.ok(Math.abs(ppd - 25.0) < 1e-6);
-  assert.equal(SnellenCore.nyquistSnellenDenom(ppd), 48);
+test('HMD PPD & Nyquist acuity estimator matches exact on-axis rectilinear & asymmetric frustum optics', () => {
+  // 1. Symmetric 90 deg horizontal FOV -> P[0] = 1 / tan(45 deg) = 1.0, P[8] = 0, W = 2250 px:
+  //    Average FOV PPD = 2250 / 90 = 25.0, while exact On-Axis Center Render PPD (theta = 0) = (2250/2) * 1.0 * (pi/180) = 19.634954 PPD
+  const sym = SnellenCore.estimateHmdOptics([1.0, 0, 0, 0,  0, 1.0, 0, 0,  0.0, 0, -1, -1,  0, 0, -0.2, 0], 2250);
+  assert.ok(Math.abs(sym.hFovDeg - 90.0) < 1e-6);
+  assert.ok(Math.abs(sym.avgPPD - 25.0) < 1e-6);
+  const expectedCenter = 0.5 * 2250 * 1.0 * (Math.PI / 180);
+  assert.ok(Math.abs(sym.centerPPD - expectedCenter) < 1e-6);
+  assert.equal(SnellenCore.estimateHmdPPD([1.0, 0, 0, 0], 2250), sym.centerPPD);
+  assert.equal(SnellenCore.nyquistSnellenDenom(30.0), 40);
+
+  // 2. Asymmetric HMD stereo frustum (e.g. nasal 42 deg, temporal 54 deg => total hFov = 96 deg):
+  const tanL = Math.tan(42 * Math.PI / 180);
+  const tanR = Math.tan(54 * Math.PI / 180);
+  const p00 = 2 / (tanR + tanL);
+  const p02 = (tanR - tanL) / (tanR + tanL);
+  const asym = SnellenCore.estimateHmdOptics([p00, 0, 0, 0,  0, 1.0, 0, 0,  p02, 0, -1, -1,  0, 0, -0.2, 0], 3400);
+  assert.ok(Math.abs(asym.hFovDeg - 96.0) < 1e-5, `Expected 96 deg asymmetric hFOV, got ${asym.hFovDeg}`);
+  assert.ok(Math.abs(asym.centerPPD - (0.5 * 3400 * p00 * Math.PI / 180)) < 1e-5);
 });
 
 test('Voice phonetic & homophone parser accurately maps letters, directions, digits, and skips', () => {
