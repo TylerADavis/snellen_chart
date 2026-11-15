@@ -279,4 +279,155 @@ test('Clinical adaptive exam engine scores 20/25 +2, 20/20 -1, and < 20/200 accu
   assert.equal(ex3.result.snellen, '< 20/200 (+1)');
 });
 
+test('Goldmann Size III & V stimulus geometry matches 4 mm² & 64 mm² clinical bowl standards', () => {
+  const d3At300mm = SnellenCore.vfStimulusDiameterMeters(0.30, 'III') * 1000; // mm
+  const area3Mm2 = Math.PI * Math.pow(d3At300mm * 0.5, 2);
+  assert.ok(Math.abs(area3Mm2 - 4.0) < 0.02, `Expected Goldmann III area ~4.00 mm² at 300 mm, got ${area3Mm2}`);
+
+  const d5At300mm = SnellenCore.vfStimulusDiameterMeters(0.30, 'V') * 1000;
+  const area5Mm2 = Math.PI * Math.pow(d5At300mm * 0.5, 2);
+  assert.ok(Math.abs(area5Mm2 - 64.0) < 0.35, `Expected Goldmann V area ~64.0 mm² at 300 mm, got ${area5Mm2}`);
+
+  // Spherical dome placement preserves exact radius R and inward normal toward eye origin
+  for (const [xDeg, yDeg] of [[0, 0], [15, -1.5], [-27, 3], [9, -21]]) {
+    const sp = SnellenCore.vfSphericalPointMeters(1.5, xDeg, yDeg);
+    const r = Math.hypot(sp.pos[0], sp.pos[1], sp.pos[2]);
+    const nLen = Math.hypot(sp.normal[0], sp.normal[1], sp.normal[2]);
+    const dot = sp.pos[0] * sp.normal[0] + sp.pos[1] * sp.normal[1] + sp.pos[2] * sp.normal[2];
+    assert.ok(Math.abs(r - 1.5) < 1e-9, `Point radius ${r} != 1.5m`);
+    assert.ok(Math.abs(nLen - 1.0) < 1e-9, `Normal length ${nLen} != 1`);
+    assert.ok(Math.abs(dot + 1.5) < 1e-9, 'Inward normal must point directly back to tested eye center');
+  }
+});
+
+test('Visual Field grid patterns (24-2, Fast-28, 10-2) & OD/OS nasal-step mirroring', () => {
+  const g24OD = SnellenCore.buildVisualFieldGrid('24-2', 'OD');
+  const g24OS = SnellenCore.buildVisualFieldGrid('24-2', 'OS');
+  assert.equal(g24OD.points.length, 54, 'Humphrey 24-2 grid must contain exactly 54 points');
+  assert.equal(g24OS.points.length, 54, 'Humphrey 24-2 OS grid must contain exactly 54 points');
+  assert.equal(g24OD.points.filter(p => p.isBlindSpotLocus).length, 2, '24-2 OD should flag (+15, ±3) blind-spot loci');
+  assert.ok(g24OD.points.some(p => p.xDeg === -27 && p.yDeg === 3), 'OD 24-2 nasal step must lie at -27° (left/nasal)');
+  assert.ok(!g24OD.points.some(p => p.xDeg === 27), 'OD 24-2 must not have temporal +27° points');
+  assert.ok(g24OS.points.some(p => p.xDeg === 27 && p.yDeg === 3), 'OS 24-2 nasal step must mirror to +27° (right/nasal)');
+  assert.ok(g24OS.points.some(p => p.xDeg === -15 && p.isBlindSpotLocus), 'OS blind spot must mirror to -15° temporal');
+
+  const gFast = SnellenCore.buildVisualFieldGrid('fast-28', 'OD');
+  assert.equal(gFast.points.length, 28, 'Fast-28 screening grid should contain 28 points');
+
+  const g10 = SnellenCore.buildVisualFieldGrid('10-2', 'OD');
+  assert.equal(g10.points.length, 24, '10-2 central macular grid should contain 24 points');
+  assert.ok(g10.points.every(p => Math.abs(p.xDeg) <= 10 && Math.abs(p.yDeg) <= 10 && !p.isBlindSpotLocus));
+});
+
+test('Photopic perimetry decibel-to-luminance physics & ~14 dB HMD contrast floor', () => {
+  const highSensitivity = SnellenCore.vfDecibelToLuminance(32); // dim increment
+  const midSensitivity = SnellenCore.vfDecibelToLuminance(22);
+  const floorStim = SnellenCore.vfDecibelToLuminance(14);
+  const subFloorStim = SnellenCore.vfDecibelToLuminance(6); // exceeds 150 cd/m^2 consumer HMD peak
+
+  assert.ok(Math.abs(highSensitivity.floorDb - 13.6) < 0.25, `Expected ~13.6 dB floor for 150 cd/m², got ${highSensitivity.floorDb}`);
+  assert.equal(highSensitivity.isFloorClamped, false);
+  assert.equal(floorStim.isFloorClamped, false);
+  assert.equal(subFloorStim.isFloorClamped, true, '6 dB exceeds consumer HMD luminance ceiling and must report isFloorClamped=true');
+  assert.equal(subFloorStim.stimSrgb, 1.0, 'Clamped stimulus saturates at peak sRGB 1.0');
+  assert.ok(
+    floorStim.stimSrgb > midSensitivity.stimSrgb && midSensitivity.stimSrgb > highSensitivity.stimSrgb,
+    'Lower dB (brighter flash) must map monotonically to higher sRGB brightness above background'
+  );
+  assert.ok(highSensitivity.stimSrgb > highSensitivity.bgSrgb, '32 dB flash must remain brighter than 10 cd/m² background');
+});
+
+test('Visual Field 4–2 dB threshold staircase & suprathreshold engines detect arcuate scotomas', () => {
+  // Deterministic PRNG for reproducible catch-trial & order simulation
+  const makeSeededRng = (seed = 42) => {
+    let s = seed >>> 0;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  };
+
+  // 1. Healthy normal eye on 24-2 4-2 dB threshold staircase
+  const normSession = SnellenCore.createVisualFieldSession({
+    patternId: '24-2',
+    strategy: 'threshold',
+    eyeMode: 'OD',
+    rng: makeSeededRng(101)
+  });
+  while (normSession.status === 'active') {
+    const stim = SnellenCore.nextVisualFieldStimulus(normSession);
+    if (!stim) break;
+    let seen = false;
+    if (stim.kind === 'false_positive' || stim.kind === 'blind_spot') {
+      seen = false;
+    } else if (stim.kind === 'false_negative') {
+      seen = true;
+    } else {
+      const p = normSession.points[stim.pointIdx];
+      seen = !p.isBlindSpotLocus && stim.db <= p.expectedDb;
+    }
+    SnellenCore.resolveVisualFieldStimulus(normSession, seen);
+  }
+  assert.equal(normSession.status, 'complete');
+  assert.equal(normSession.result.evaluatedPoints, 52);
+  assert.ok(Math.abs(normSession.result.meanDeviation) <= 1.5, `Normal eye MD should be near 0 dB, got ${normSession.result.meanDeviation}`);
+  assert.ok(normSession.result.patternStdDev < 2.0, `Normal eye PSD should be < 2 dB, got ${normSession.result.patternStdDev}`);
+  assert.equal(normSession.result.seenPct, 100);
+  assert.equal(normSession.result.reliable, true);
+
+  // 2. Simulated Glaucomatous Superior Arcuate Scotoma (superior nasal/arcuate yDeg >= 9 depressed to <14 dB)
+  const scotomaSession = SnellenCore.createVisualFieldSession({
+    patternId: '24-2',
+    strategy: 'threshold',
+    eyeMode: 'OD',
+    rng: makeSeededRng(202)
+  });
+  while (scotomaSession.status === 'active') {
+    const stim = SnellenCore.nextVisualFieldStimulus(scotomaSession);
+    if (!stim) break;
+    let seen = false;
+    if (stim.kind === 'false_negative') {
+      seen = true;
+    } else if (stim.kind === 'point') {
+      const p = scotomaSession.points[stim.pointIdx];
+      if (!p.isBlindSpotLocus) {
+        const trueSensDb = p.yDeg >= 9 ? 10 : (p.yDeg === 3 && p.xDeg < 0 ? p.expectedDb - 7 : p.expectedDb);
+        seen = stim.db <= trueSensDb;
+      }
+    }
+    SnellenCore.resolveVisualFieldStimulus(scotomaSession, seen);
+  }
+  assert.ok(scotomaSession.result.meanDeviation < -5.5, `Arcuate scotoma should yield negative MD < -5.5 dB, got ${scotomaSession.result.meanDeviation}`);
+  assert.ok(scotomaSession.result.patternStdDev > 5.0, `Localized superior defect must elevate PSD > 5 dB, got ${scotomaSession.result.patternStdDev}`);
+  assert.ok(scotomaSession.result.deepCount >= 18, `Expected >= 18 deep (<14 dB) superior points, got ${scotomaSession.result.deepCount}`);
+  assert.ok(scotomaSession.result.relativeCount >= 3, `Expected nasal relative defect points, got ${scotomaSession.result.relativeCount}`);
+});
+
+test('Heijl–Krakau blind-spot fixation losses, false positives, & spoken response parser', () => {
+  let s = 777;
+  const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const noisy = SnellenCore.createVisualFieldSession({
+    patternId: 'fast-28',
+    strategy: 'suprathreshold',
+    eyeMode: 'OS',
+    rng
+  });
+  noisy.unsolicitedClicks = 3;
+  while (noisy.status === 'active') {
+    const stim = SnellenCore.nextVisualFieldStimulus(noisy);
+    if (!stim) break;
+    // Simulate poor fixation & trigger-happy clicking on EVERY catch trial, while missing FN catch trials
+    const seen = stim.kind === 'false_negative' ? false : true;
+    SnellenCore.resolveVisualFieldStimulus(noisy, seen);
+  }
+  assert.ok(noisy.result.bsCatchTotal >= 1 && noisy.result.fixationLosses === noisy.result.bsCatchTotal);
+  assert.ok(noisy.result.falsePositives >= 4, 'Should tally blank FP catch trials + unsolicited ISI clicks');
+  assert.equal(noisy.result.reliable, false, 'High FL/FP exam must be flagged as low reliability');
+  assert.ok(noisy.result.reliabilityStatus.includes('Caution:'));
+
+  assert.equal(SnellenCore.parseVfSpokenResponse('Seen!'), true);
+  assert.equal(SnellenCore.parseVfSpokenResponse('yes flash'), true);
+  assert.equal(SnellenCore.parseVfSpokenResponse('nothing'), false);
+});
+
 console.log(`\nAll ${passed} test suites passed!\n`);

@@ -1,6 +1,6 @@
-# WebXR Clinical Snellen & Visual Acuity Chart
+# WebXR Clinical Snellen Acuity & Visual Field (Perimetry) Suite
 
-A zero-dependency, single-file (`index.html`) **WebXR VR / AR + Calibrated 2D** visual acuity chart built with pure WebGL2 vector optotypes and exact optometric angular math.
+A zero-dependency, single-file (`index.html`) **WebXR VR / AR + Calibrated 2D** visual acuity & static automated perimetry (visual field) screening suite built with pure WebGL2 vector geometry and exact optometric angular math.
 
 ## Key Features
 
@@ -34,8 +34,21 @@ A zero-dependency, single-file (`index.html`) **WebXR VR / AR + Calibrated 2D** 
     2. **Hands-Free Voice Recognition (`🎤 Voice`)**: Uses the Web Speech API with an optometric phonetic/homophone parser (`"Charlie"` / `"see"` → `C`, `"tea"` → `T`, `"ate"` → `8`, `"up"` / `"left"` → `↑` / `←`, `"skip"` / `"can't read"` → `Skip`).
     3. **VR Controller Thumbstick Flick**: On Tumbling E & 4-way Landolt C exams, flicking the thumbstick Up/Down/Left/Right submits the orientation without looking away from the chart (`A/X` = Skip).
     4. **Physical Keyboard**: Type the letter/number, press Arrow keys for directions, or press `Space`/`?`/`Backspace` to skip.
+- **Static Automated Visual Field (Perimetry) Mode (`◎ Visual Field`)**
+  - **3D Concave Hemispherical Bowl & Calibrated 2D Tangent Perimeter**: Projects `200 ms` circular **Goldmann Size III (`0.431°` / `4 mm²` at `300 mm`)** or **Size V (`1.724°`)** light increments over a calibrated `10 cd/m²` (`31.5 asb` equivalent) photopic bowl background.
+  - **3 Clinical Perimetry Grids** with automatic **`OD` / `OS` Nasal-Temporal Mirroring**:
+    1. **`24-2` Standard Grid (`54 pts`)**: `6°` straddling grid across `±21°` plus `27°` nasal-step loci (`-27°` OD / `+27°` OS) and `±15°` temporal blind-spot loci.
+    2. **`Fast-28` Rapid Screening Grid (`28 pts`)**: Paracentral + Bjerrum arcuate + nasal-step screening in under a minute.
+    3. **`10-2` Central Macular Grid (`24 pts`)**: High-density `±10°` central field grid.
+  - **2 Testing Strategies & Humphrey-Style Analytics**:
+    - **Suprathreshold 2-Zone Screener** (Age-adjusted Hill-of-Vision `-6 dB` screen with `14 dB` peak-contrast confirmation pass → classifies points as `Normal`, `Relative Defect`, or `Deep Defect (<14 dB)`).
+    - **Adaptive `4–2 dB` Threshold Staircase** (`14–34 dB` consumer HMD contrast range → computes **Mean Sensitivity (`MS`)**, **Mean Deviation (`MD`)**, **Pattern Standard Deviation (`PSD`)**, interactive **HFA-style Polar Sensitivity Map**, and **3D Dome Overlay**).
+  - **Chinrest-Free Head-Locked VR Bowl + Multi-Modal Fixation Monitoring**:
+    - Optional **Head-Locked Dome in VR** centers the perimeter hemisphere on the active eye's optical origin (`XRView`) so posture shifts never distort eccentricity angles.
+    - Interleaves **Heijl–Krakau `15°` Blind-Spot Catch Trials** (`FL`), **Blank False-Positive Intervals** (`FP`), **Suprathreshold False-Negative Trials** (`FN`), and live **WebXR Eye-Tracking (`gaze`) Fixation Drift Warnings (`>3.5°`)**, plus an idle **`15°` Blind-Spot Finder Demo**.
+    - Respond via **VR Trigger / Pinch anywhere**, **Gamepad `A / X`**, **`Spacebar` / Mouse Click**, or **Voice (`"Seen"` / `"Yes"`)** — with peripheral laser beams suppressed during active perimetry so zero distractions cross the bowl.
 - **2D Calibrated Flat-Screen Mode**
-  - Includes a built-in **ISO Credit Card (`85.60 mm`) ruler calibrator** so friends without a VR headset can also use it at exact physical scale on any monitor or laptop.
+  - Includes a built-in **ISO Credit Card (`85.60 mm`) ruler calibrator** so friends without a VR headset can also use both the Snellen Acuity Chart and 2D Tangent Visual Field Screener at exact physical angular scale on any monitor or laptop.
 
 ---
 
@@ -64,13 +77,15 @@ WebXR browsers (Meta Quest Browser, Apple Vision Pro Safari, PCVR Chrome/Edge) *
 
 | Action | VR / AR Headset | Keyboard / Desktop |
 | :--- | :--- | :--- |
-| **Shuffle / Cycle Chart** | Point at **↻ Cycle** (or pull **Trigger** / press **A / X**) | `Space` or `R` |
+| **Toggle Acuity / Visual Field Mode** | 3D Console `◎ Visual Field` / `← Acuity Chart` | `V` |
+| **Visual Field "SEEN" Clicker** | Pull **Trigger**, **Pinch** anywhere, **A / X**, or say `"Seen"` | `Space`, `Enter`, or Click Canvas |
+| **Shuffle / Cycle Chart (Acuity)** | Point at **↻ Cycle** (or pull **Trigger** / press **A / X**) | `Space` or `R` |
 | **Select Acuity Row** | **Thumbstick ↑ / ↓** or 3D Console `▲ / ▼ Row` | `↑` / `↓` Arrows |
 | **Switch Chart Type** | **Thumbstick ← / →** or 3D Console buttons | `1` – `6` |
 | **Cycle Eye Occluder (`OU`/`OD`/`OS`)** | **B / Y** button or 3D Console | `E` |
 | **Layout (`Full` / `Line` / `1 Optotype`)** | 3D Console buttons | `M` |
 | **Toggle 5′ Lean Lock** | 3D Console `Lock 5′ Angle` | `L` |
-| **Recenter Chart** | **Grip / Squeeze** or 3D Console `Recenter` | `C` |
+| **Recenter Chart / Dome** | **Grip / Squeeze** or 3D Console `Recenter` | `C` |
 
 ## Running Automated Tests
 
@@ -83,9 +98,9 @@ node tests/xr_runtime.test.mjs
 
 ## Medical & Non-Diagnostic Disclaimer
 
-> **IMPORTANT:** This software is provided strictly for **educational, experimental, and informational self-screening purposes**. It is **not** a certified or regulated medical device (FDA, CE/MDR, or otherwise) and is **not** intended to diagnose, treat, or prescribe corrections for any refractive error or ocular condition.
+> **IMPORTANT:** This software is provided strictly for **educational, experimental, and informational self-screening purposes**. It is **not** a certified or regulated medical device (FDA, CE/MDR, or otherwise) and is **not** intended to diagnose, monitor, treat, or rule out glaucoma, optic neuropathies, retinal detachment, stroke/neurological visual field defects, refractive error, or any other ocular/medical condition.
 >
-> VR/AR headsets and optical see-through glasses have fixed optical focal planes (e.g., `~0.9 m` to `4.0 m` rather than `20 ft / 6 m` optical infinity), finite angular pixel density (PPD / Nyquist limits), and non-standardized luminance that differ from a clinical examination lane. Always consult a licensed optometrist or ophthalmologist for professional vision testing and eye care.
+> **Hardware Optical & Dynamic-Range Limits:** VR/AR headsets and consumer monitors have fixed optical focal planes (`~0.9 m` to `4.0 m` rather than `20 ft / 6 m`), finite angular pixel density (PPD / Nyquist limits), uncalibrated per-unit gamma/luminance, and a peak brightness ceiling (`~100–200 cd/m²`) far below clinical projection perimeters like the Humphrey Field Analyzer (`10,000 asb` / `~3,183 cd/m²`). This creates a physical **perimetry contrast floor around `~14–18 dB`**, meaning dense scotomas (`< 14 dB`) and subtle longitudinal glaucoma progression cannot be quantified to clinical standards. Always consult a licensed ophthalmologist or optometrist for professional eye care, and seek immediate medical attention for any sudden vision loss, flashes, floaters, or curtain/shadow across your vision.
 
 ## License
 

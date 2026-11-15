@@ -1,20 +1,23 @@
 <!DOCTYPE html>
 <!--
-  WebXR Snellen & Visual Acuity Chart
+  WebXR Snellen Visual Acuity & Automated Visual Field (Perimetry) Suite
   Copyright (c) 2026 Tyler Davis — Licensed under the MIT License (see LICENSE).
 
   MEDICAL & NON-DIAGNOSTIC DISCLAIMER:
-  This software is for educational, experimental, and informational purposes only.
-  It is NOT a certified or regulated medical device and is NOT a substitute for a
-  comprehensive eye exam by a licensed optometrist or ophthalmologist. Headset fixed
-  focal planes, finite pixel density (PPD), and display luminance affect acuity
-  measurements compared to a clinical 20 ft (6 m) examination lane.
+  This software (both Visual Acuity and Visual Field / Static Perimetry modes) is for
+  educational, experimental, and informational self-screening purposes ONLY. It is NOT
+  a certified or regulated medical device (FDA, CE/MDR, or otherwise) and is NOT a
+  substitute for a clinical eye exam or standard automated perimetry (e.g., Humphrey Field
+  Analyzer) performed by a licensed optometrist or ophthalmologist. Consumer VR/AR headsets
+  and monitors have fixed focal planes, uncalibrated luminance, ambient light leakage, and
+  restricted contrast dynamic range (~14–34 dB floor vs. 0–40+ dB / 10,000 asb clinical bowls)
+  that cannot rule out glaucoma, optic neuropathies, retinal disease, or neurological defects.
 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WebXR Clinical Snellen &amp; Visual Acuity Chart</title>
+  <title>WebXR Snellen Chart &amp; Visual Field Perimetry</title>
   <style>
     :root {
       --bg: #0c1017;
@@ -341,13 +344,35 @@
       font-weight: 700;
       color: #fff;
     }
+    .btn-clicker {
+      width: 100%;
+      padding: 13px 12px;
+      font-size: 0.92rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      background: linear-gradient(135deg, #d97706, #b45309);
+      border-color: #fbbf24;
+      color: #fffbeb;
+    }
+    .btn-clicker:hover:not(:disabled) {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      border-color: #fde68a;
+    }
+    #vfMapCanvas {
+      width: 100%;
+      height: auto;
+      background: #0b0f18;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: block;
+    }
   </style>
 </head>
 <body>
 <div id="app">
   <aside>
     <div class="brand">
-      <h1>WebXR Snellen Chart</h1>
+      <h1>WebXR Vision Suite</h1>
       <span class="badge" id="xrStatusBadge">Checking XR…</span>
     </div>
 
@@ -364,6 +389,17 @@
 
     <div class="section">
       <div class="section-title">
+        <span>Test Mode</span>
+        <span id="activeModeBadge" style="color:#60a5fa;">Acuity Chart</span>
+      </div>
+      <div class="grid-2">
+        <button class="btn active" id="btnModeAcuity" title="Shortcut: V to toggle">🔤 Visual Acuity</button>
+        <button class="btn" id="btnModeVF" title="Static Automated Perimetry (Visual Field)">◎ Visual Field</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
         <span>Viewport Mode</span>
       </div>
       <div class="grid-2">
@@ -372,7 +408,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" id="acuityChartSection">
       <div class="section-title">
         <span>Chart &amp; Anti-Memorization</span>
         <span id="cycleCounter" style="color:#60a5fa;">#1</span>
@@ -408,6 +444,94 @@
       </div>
     </div>
 
+    <div class="section" id="vfSection" style="display:none;">
+      <div class="section-title">
+        <span>Visual Field (Static Perimetry)</span>
+        <span id="vfPhaseBadge" style="color:#fbbf24;">Idle</span>
+      </div>
+
+      <div class="warn-box" id="vfDisclaimerBanner" style="font-size:0.72rem;">
+        <strong>Non-Diagnostic Perimetry Disclaimer:</strong> Educational &amp; experimental screening only — <strong>not an FDA/CE-cleared perimeter</strong> or clinical glaucoma/neurological exam. Consumer VR headsets &amp; monitors lack clinical bowl calibration (<code>10,000 asb</code>) and hit a contrast dynamic-range floor around <strong>~14 dB</strong>, so deep scotomas and subtle progression cannot be ruled out. Consult an ophthalmologist or optometrist for eye care.
+      </div>
+
+      <select id="selVfPattern" aria-label="Visual Field Pattern">
+        <option value="24-2" selected>24-2 Standard Grid (54 pts, ±24° + Nasal Step)</option>
+        <option value="fast-28">Fast-28 Screening Grid (28 pts, ~45 sec)</option>
+        <option value="10-2">10-2 Central Macular Grid (24 pts, ±10°)</option>
+      </select>
+
+      <select id="selVfStrategy" aria-label="Perimetry Strategy">
+        <option value="suprathreshold" selected>Suprathreshold Screen (Normal / Relative / &lt;14 dB)</option>
+        <option value="threshold">Adaptive 4–2 dB Threshold Staircase (14–34 dB)</option>
+      </select>
+
+      <select id="selVfSize" aria-label="Goldmann Stimulus Size">
+        <option value="III" selected>Goldmann Size III (0.431° / 4 mm² Standard)</option>
+        <option value="V">Goldmann Size V (1.724° Low-Vision / Peripheral)</option>
+      </select>
+
+      <label class="toggle" title="In VR, stabilizes the perimeter hemisphere to your head posture so you don't need a rigid chinrest — keep ONLY your eyes fixed on the center diamond!">
+        <span>Head-Locked Dome in VR (No Chinrest)</span>
+        <input type="checkbox" id="chkVfHeadLock" checked />
+      </label>
+
+      <label class="toggle" title="Pulses a Goldmann stimulus at 15° temporal (-1.5° inferior) while idle so you can verify monocular occlusion and experience your physiological optic-nerve blind spot">
+        <span>15° Blind-Spot Finder Demo (Idle)</span>
+        <input type="checkbox" id="chkVfBlindSpotDemo" />
+      </label>
+
+      <div class="grid-2">
+        <button class="btn btn-green" id="btnStartVF">▶ Start VF Test</button>
+        <button class="btn" id="btnCancelVF" disabled>✕ Stop Test</button>
+      </div>
+
+      <button class="btn btn-clicker" id="btnVfClicker" disabled title="Press Spacebar, Click, VR Trigger, Pinch, or A/X whenever you see a peripheral flash while staring at the center diamond">
+        ● SEEN — Press Space / Trigger / Click
+      </button>
+
+      <div class="hint" id="vfLivePrompt" style="color:#e2e8f0; font-weight:600;">
+        Select Right (OD) or Left (OS) eye, keep gaze locked on the central amber diamond, and click whenever a peripheral light flashes.
+      </div>
+
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="k">Fixation Losses (BS)</div>
+          <div class="v" id="valVfFL">0 / 0</div>
+        </div>
+        <div class="metric-card">
+          <div class="k">False Positives (FP)</div>
+          <div class="v" id="valVfFP">0 / 0</div>
+        </div>
+        <div class="metric-card">
+          <div class="k">False Negatives (FN)</div>
+          <div class="v" id="valVfFN">0 / 0</div>
+        </div>
+        <div class="metric-card">
+          <div class="k">VR Luminance Range</div>
+          <div class="v" id="valVfRange">14–34 dB (10 cd/m²)</div>
+        </div>
+      </div>
+
+      <canvas id="vfMapCanvas" width="328" height="276"></canvas>
+
+      <div id="vfResultBanner" class="exam-banner" style="display:none;"></div>
+
+      <div class="scorecard">
+        <div class="score-pill">
+          <div class="eye-tag">OD (Right VF)</div>
+          <div class="eye-val" id="vfScoreOD">—</div>
+        </div>
+        <div class="score-pill">
+          <div class="eye-tag">OS (Left VF)</div>
+          <div class="eye-val" id="vfScoreOS">—</div>
+        </div>
+        <div class="score-pill">
+          <div class="eye-tag">OU (Binoc VF)</div>
+          <div class="eye-val" id="vfScoreOU">—</div>
+        </div>
+      </div>
+    </div>
+
     <div class="section">
       <div class="section-title">
         <span>Optical Distance &amp; True Size</span>
@@ -420,15 +544,16 @@
         <option value="1.500" selected>1.5 m (4.9 ft) — Mid VR Focal Plane (0.67 D)</option>
         <option value="1.300">1.3 m (4.3 ft) — Meta Quest 3 / Pro (0.77 D)</option>
         <option value="0.900">0.9 m (3.0 ft) — Samsung Galaxy XR (1.11 D)</option>
+        <option value="0.300">0.30 m (1.0 ft) — 30 cm Humphrey Bowl / 2D Near</option>
         <option value="custom">Custom Focal Distance (m)…</option>
       </select>
 
       <div id="customDistRow" style="display:none;" class="grid-2">
-        <input type="number" id="inpCustomDist" min="0.4" max="10.0" step="0.05" value="0.90" aria-label="Custom Distance Meters" />
+        <input type="number" id="inpCustomDist" min="0.25" max="10.0" step="0.05" value="0.90" aria-label="Custom Distance Meters" />
         <button class="btn" id="btnApplyCustomDist">Apply (m)</button>
       </div>
 
-      <label class="toggle" title="Continuously scales chart to your live eye-to-chart distance so 20/20 ALWAYS subtends 5.00 arcminutes even if you lean">
+      <label class="toggle" title="Continuously scales chart/dome to your live eye distance so angular subtense is preserved">
         <span>Lock 5′ Angular Size (Lean-Proof)</span>
         <input type="checkbox" id="chkLockAngle" checked />
       </label>
@@ -456,11 +581,11 @@
 
       <div class="metrics">
         <div class="metric-card">
-          <div class="k">Active Row Acuity</div>
+          <div class="k" id="lblMetric1">Active Row Acuity</div>
           <div class="v" id="valAcuity">20/20 (6/6)</div>
         </div>
         <div class="metric-card">
-          <div class="k">20/20 Physical Height</div>
+          <div class="k" id="lblMetric2">20/20 Physical Height</div>
           <div class="v" id="val2020Height">2.18 mm</div>
         </div>
         <div class="metric-card">
@@ -468,7 +593,7 @@
           <div class="v" id="valLiveDist">1.50 m (4.9 ft)</div>
         </div>
         <div class="metric-card">
-          <div class="k">Angular Subtense</div>
+          <div class="k" id="lblMetric4">Angular Subtense</div>
           <div class="v" id="valSubtense">5.00′ (Exact)</div>
         </div>
       </div>
@@ -532,7 +657,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" id="acuityAnswerSection">
       <div class="section-title">
         <span>Examiner Answer Key</span>
         <label style="font-size:0.72rem; cursor:pointer; text-transform:none;">
@@ -541,13 +666,13 @@
       </div>
       <div class="answer-box" id="answerKeyBox"></div>
       <div class="hint">
-        <strong>Keys:</strong> <code>Space</code> Cycle • <code>↑/↓</code> Row • <code>1–6</code> Chart • <code>E</code> Eye • <code>C</code> Recenter<br/>
-        <strong>VR Controllers:</strong> Trigger/A = Cycle (or click 3D console) • Stick ↑/↓ = Row • Stick ←/→ = Chart • B/Y = Eye Occluder • Grip = Recenter
+        <strong>Keys:</strong> <code>Space</code> Cycle / VF Click • <code>V</code> Visual Field • <code>↑/↓</code> Row • <code>1–6</code> Chart • <code>E</code> Eye • <code>C</code> Recenter<br/>
+        <strong>VR Controllers:</strong> Trigger/A = Cycle or VF Click • Stick ↑/↓ = Row • Stick ←/→ = Chart • B/Y = Eye Occluder • Grip = Recenter
       </div>
     </div>
 
     <div class="warn-box" id="medicalDisclaimer" style="font-size:0.70rem; color:#cbd5e1; border-color:rgba(148, 163, 184, 0.28); background:rgba(148, 163, 184, 0.07);">
-      <strong>Medical Disclaimer:</strong> Educational &amp; experimental tool only — <strong>not a certified medical device</strong> or clinical diagnosis. Headset fixed focal distances, lens optics, and PPD limits differ from a 20 ft optometric exam. Consult an optometrist or ophthalmologist for medical advice or prescriptions.
+      <strong>Medical Disclaimer:</strong> Educational &amp; experimental tool only — <strong>not a certified medical device</strong> or clinical diagnosis. Headset fixed focal distances, lens optics, PPD limits, and uncalibrated display dynamic range (~14–34 dB vs. clinical 10,000 asb perimeters) cannot replace a professional optometric or ophthalmic exam. Seek prompt medical attention for any sudden vision changes, flashes, floaters, or visual field shadows.
     </div>
   </aside>
 
@@ -1570,14 +1695,558 @@ const SnellenCore = (() => {
     }
   }
 
+  // ============================================================================
+  // Static Automated Perimetry (Visual Field) Optometric & Psychophysical Engine
+  // ============================================================================
+
+  // Goldmann standard stimulus angular diameters in degrees (Size III = 0.431 deg = 4 mm^2 at 300 mm)
+  const RAD_TO_DEG = 180 / Math.PI;
+  const GOLDMANN_SIZES_DEG = {
+    I: 0.108,
+    II: 0.215,
+    III: 0.431,
+    IV: 0.862,
+    V: 1.724
+  };
+
+  const VF_PATTERNS = {
+    '24-2': {
+      id: '24-2',
+      name: '24-2 Standard Grid',
+      shortName: '24-2 (54pt)',
+      maxDeg: 27
+    },
+    'fast-28': {
+      id: 'fast-28',
+      name: 'Fast-28 Screening Grid',
+      shortName: 'Fast-28',
+      maxDeg: 24
+    },
+    '10-2': {
+      id: '10-2',
+      name: '10-2 Central Macular',
+      shortName: '10-2 Macula',
+      maxDeg: 10
+    }
+  };
+
+  function vfStimulusDiameterMeters(distanceMeters, goldmannSize = 'III') {
+    const deg = GOLDMANN_SIZES_DEG[goldmannSize] || GOLDMANN_SIZES_DEG.III;
+    return 2 * distanceMeters * Math.tan((deg * DEG_TO_RAD) * 0.5);
+  }
+
+  // Maps visual angle (xDeg right, yDeg superior/up) onto a spherical perimeter bowl of radius R centered at eye
+  function vfSphericalPointMeters(radiusMeters, xDeg, yDeg) {
+    const eccDeg = Math.hypot(xDeg, yDeg);
+    if (eccDeg < 1e-9) {
+      return {
+        pos: [0, 0, -radiusMeters],
+        normal: [0, 0, 1],
+        eccentricityDeg: 0
+      };
+    }
+    const eccRad = eccDeg * DEG_TO_RAD;
+    const phi = Math.atan2(yDeg, xDeg);
+    const sinE = Math.sin(eccRad);
+    const cosE = Math.cos(eccRad);
+    const ux = sinE * Math.cos(phi);
+    const uy = sinE * Math.sin(phi);
+    const uz = -cosE;
+    return {
+      pos: [radiusMeters * ux, radiusMeters * uy, radiusMeters * uz],
+      normal: [-ux, -uy, -uz],
+      eccentricityDeg: eccDeg
+    };
+  }
+
+  // Tangent-plane projection (xMeters, yMeters) for calibrated 2D flat-screen perimetry at distance D
+  function vfTangentPointMeters(distanceMeters, xDeg, yDeg) {
+    return [
+      distanceMeters * Math.tan(xDeg * DEG_TO_RAD),
+      distanceMeters * Math.tan(yDeg * DEG_TO_RAD)
+    ];
+  }
+
+  function linearToSrgb(u) {
+    const c = Math.max(0, Math.min(1, u));
+    if (c >= 1) return 1;
+    return c <= 0.0031308 ? 12.92 * c : Math.min(1, 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+  }
+
+  /**
+   * Converts Humphrey-equivalent decibel attenuation (dB) to Weber contrast & linear-calibrated sRGB.
+   * Standard HFA reference: background L_b = 10 cd/m^2 (31.5 asb), 0 dB max increment = 3183.1 cd/m^2 (10,000 asb).
+   * Typical VR HMD / SDR display peak ~150 cd/m^2 yields a physical dynamic-range floor of ~13.6 dB (14 dB).
+   */
+  function vfDecibelToLuminance(db, options = {}) {
+    const bgCdM2 = options.bgCdM2 || 10.0;
+    const maxStimDeltaCdM2 = options.maxStimDeltaCdM2 || 3183.1;
+    const peakDisplayCdM2 = options.peakDisplayCdM2 || 150.0;
+    const maxAchievableDelta = Math.max(1.0, peakDisplayCdM2 - bgCdM2);
+    const floorDb = +(10 * Math.log10(maxStimDeltaCdM2 / maxAchievableDelta)).toFixed(1);
+
+    const idealDeltaCdM2 = maxStimDeltaCdM2 * Math.pow(10, -db / 10);
+    const clampedDeltaCdM2 = Math.min(maxAchievableDelta, idealDeltaCdM2);
+    const isFloorClamped = idealDeltaCdM2 > maxAchievableDelta + 1e-6;
+
+    const bgLinear = Math.min(1, bgCdM2 / peakDisplayCdM2);
+    const stimLinear = Math.min(1, (bgCdM2 + clampedDeltaCdM2) / peakDisplayCdM2);
+
+    return {
+      db,
+      floorDb,
+      isFloorClamped,
+      idealDeltaCdM2,
+      clampedDeltaCdM2,
+      weberContrast: clampedDeltaCdM2 / bgCdM2,
+      bgLinear,
+      stimLinear,
+      bgSrgb: linearToSrgb(bgLinear),
+      stimSrgb: linearToSrgb(stimLinear)
+    };
+  }
+
+  // Age-normal Hill-of-Vision reference sensitivity (dB) across the central 30 deg field
+  function vfExpectedNormalDb(xDeg, yDeg) {
+    const ecc = Math.hypot(xDeg, yDeg);
+    const supPenalty = yDeg > 0 ? 0.06 * yDeg : 0;
+    return Math.round(Math.max(20, Math.min(34, 33.0 - 0.22 * ecc - supPenalty)));
+  }
+
+  /**
+   * Generates clinical visual field coordinate grids (in patient-view degrees: +X right, +Y superior).
+   * Mirrors nasal/temporal geometry for OD (nasal = -X, blind spot = +15, -1.5) vs OS (nasal = +X, blind spot = -15, -1.5).
+   */
+  function buildVisualFieldGrid(patternId = '24-2', eyeMode = 'OD') {
+    const mirrorX = eyeMode === 'OS' ? -1 : 1;
+    const isOU = eyeMode === 'OU';
+    const rawCoords = [];
+
+    if (patternId === '10-2') {
+      // 24-point high-density central 10 deg macular grid
+      const base = [
+        [-1, 1], [1, 1], [-1, -1], [1, -1],
+        [-3, 3], [3, 3], [-3, -3], [3, -3],
+        [-5, 1], [5, 1], [-5, -1], [5, -1],
+        [-1, 5], [1, 5], [-1, -5], [1, -5],
+        [-5, 5], [5, 5], [-5, -5], [5, -5],
+        [-9, 3], [9, 3], [-9, -3], [9, -3]
+      ];
+      for (const [x, y] of base) rawCoords.push([x * mirrorX, y]);
+    } else if (patternId === 'fast-28') {
+      // 28-point rapid glaucoma/neurologic screening grid (paracentral + Bjerrum arcuate + nasal step)
+      const sym = [
+        [-3, 3], [3, 3], [-3, -3], [3, -3],
+        [-9, 3], [9, 3], [-9, -3], [9, -3],
+        [-3, 9], [3, 9], [-3, -9], [3, -9],
+        [-9, 9], [9, 9], [-9, -9], [9, -9],
+        [-15, 9], [15, 9], [-15, -9], [15, -9],
+        [-9, 15], [9, 15], [-9, -15], [9, -15]
+      ]; // 24 symmetric arcuate/paracentral points
+      for (const [x, y] of sym) rawCoords.push([x, y]);
+      if (isOU) {
+        rawCoords.push([-24, 3], [-24, -3], [24, 3], [24, -3]);
+      } else {
+        // 2 nasal step (-24 deg OD / +24 deg OS) + 2 temporal peripheral (+21 deg OD / -21 deg OS) = 28 total
+        rawCoords.push([-24 * mirrorX, 3], [-24 * mirrorX, -3], [21 * mirrorX, 3], [21 * mirrorX, -3]);
+      }
+    } else {
+      // Standard 54-point Humphrey 24-2 straddling grid (6 deg spacing on +/-3, +/-9, +/-15, +/-21 + nasal +/-27)
+      const rowSpecs = [
+        [21,  [-9, -3, 3, 9]],
+        [15,  [-15, -9, -3, 3, 9, 15]],
+        [9,   [-21, -15, -9, -3, 3, 9, 15, 21]],
+        [3,   isOU ? [-27, -21, -15, -9, -3, 3, 9, 15, 21, 27] : [-27, -21, -15, -9, -3, 3, 9, 15, 21]],
+        [-3,  isOU ? [-27, -21, -15, -9, -3, 3, 9, 15, 21, 27] : [-27, -21, -15, -9, -3, 3, 9, 15, 21]],
+        [-9,  [-21, -15, -9, -3, 3, 9, 15, 21]],
+        [-15, [-15, -9, -3, 3, 9, 15]],
+        [-21, [-9, -3, 3, 9]]
+      ];
+      for (const [y, xs] of rowSpecs) {
+        const mappedXs = isOU ? xs : xs.map(x => x * mirrorX);
+        mappedXs.sort((a, b) => a - b);
+        for (const mx of mappedXs) rawCoords.push([mx, y]);
+      }
+    }
+
+    const blindSpotCenter = isOU
+      ? null
+      : { xDeg: 15.0 * mirrorX, yDeg: -1.5 };
+
+    let maxEccentricityDeg = 10;
+    const points = rawCoords.map(([xDeg, yDeg], idx) => {
+      const isBlindSpotLocus = !isOU && (xDeg === 15 * mirrorX) && (Math.abs(yDeg) === 3);
+      const ecc = Math.hypot(xDeg, yDeg);
+      if (ecc > maxEccentricityDeg) maxEccentricityDeg = ecc;
+      return {
+        index: idx,
+        xDeg,
+        yDeg,
+        eccentricityDeg: ecc,
+        isBlindSpotLocus,
+        expectedDb: vfExpectedNormalDb(xDeg, yDeg)
+      };
+    });
+
+    return {
+      patternId: VF_PATTERNS[patternId] ? patternId : '24-2',
+      eyeMode,
+      blindSpotCenter,
+      maxEccentricityDeg,
+      points
+    };
+  }
+
+  function parseVfSpokenResponse(transcript) {
+    if (!transcript || typeof transcript !== 'string') return false;
+    const norm = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+    return /\b(seen|see|saw|yes|yeah|yep|flash|dot|spot|light|blink|click|now|there|got)\b/.test(norm);
+  }
+
+  function finalizeVisualFieldSession(vf) {
+    const evalPts = vf.points.filter(p => !p.isBlindSpotLocus && p.finalDb !== null);
+    const n = Math.max(1, evalPts.length);
+
+    let sumSens = 0;
+    let sumTd = 0;
+    let normalCount = 0;
+    let relativeCount = 0;
+    let deepCount = 0;
+    const tds = [];
+
+    for (const p of evalPts) {
+      const clampedMeas = Math.max(12, p.finalDb);
+      const td = clampedMeas - p.expectedDb;
+      sumSens += Math.max(14, clampedMeas);
+      sumTd += td;
+      tds.push(td);
+      if (p.defectClass === 'deep') deepCount++;
+      else if (p.defectClass === 'relative') relativeCount++;
+      else normalCount++;
+    }
+
+    const meanSensitivity = +(sumSens / n).toFixed(1);
+    const meanDeviation = +(sumTd / n).toFixed(2);
+
+    let varSum = 0;
+    for (const td of tds) {
+      const diff = td - meanDeviation;
+      varSum += diff * diff;
+    }
+    const patternStdDev = +(Math.sqrt(varSum / Math.max(1, n - 1))).toFixed(2);
+
+    const flRate = vf.bsCatchTotal > 0 ? vf.fixationLosses / vf.bsCatchTotal : 0;
+    const totalFpChecks = vf.fpCatchTotal + vf.unsolicitedClicks;
+    const totalFpErrors = vf.falsePositives + vf.unsolicitedClicks;
+    const fpRate = totalFpChecks > 0 ? totalFpErrors / Math.max(vf.completedTrials, totalFpChecks) : 0;
+    const fnRate = vf.fnCatchTotal > 0 ? vf.falseNegatives / vf.fnCatchTotal : 0;
+
+    const reliabilityWarnings = [];
+    if (vf.bsCatchTotal > 0 && flRate > 0.20) reliabilityWarnings.push('High Fixation Losses (>20%)');
+    if (totalFpErrors >= 2 && ( (vf.fpCatchTotal > 0 && (vf.falsePositives / vf.fpCatchTotal) > 0.15) || fpRate > 0.15 )) {
+      reliabilityWarnings.push('High False Positives / Trigger-Happy');
+    }
+    if (vf.fnCatchTotal > 0 && fnRate > 0.20) reliabilityWarnings.push('High False Negatives (>20%)');
+    if (vf.gazeFixationWarnings >= 3) reliabilityWarnings.push('Eye-Tracker Gaze Drift (>3.5°)');
+
+    const seenPct = Math.round((normalCount / n) * 100);
+    return {
+      eyeMode: vf.eyeMode,
+      patternId: vf.patternId,
+      patternName: VF_PATTERNS[vf.patternId] ? VF_PATTERNS[vf.patternId].shortName : vf.patternId,
+      strategy: vf.strategy,
+      goldmannSize: vf.goldmannSize,
+      evaluatedPoints: evalPts.length,
+      totalPoints: vf.points.length,
+      normalCount,
+      relativeCount,
+      deepCount,
+      seenPct,
+      meanSensitivity,
+      meanDeviation,
+      patternStdDev,
+      fixationLosses: vf.fixationLosses,
+      bsCatchTotal: vf.bsCatchTotal,
+      falsePositives: totalFpErrors,
+      fpCatchTotal: vf.fpCatchTotal,
+      falseNegatives: vf.falseNegatives,
+      fnCatchTotal: vf.fnCatchTotal,
+      gazeFixationWarnings: vf.gazeFixationWarnings,
+      reliable: reliabilityWarnings.length === 0,
+      reliabilityStatus: reliabilityWarnings.length === 0 ? 'Good Reliability' : `Caution: ${reliabilityWarnings.join(', ')}`,
+      summaryTag: vf.strategy === 'threshold'
+        ? `MD ${meanDeviation >= 0 ? '+' : ''}${meanDeviation.toFixed(1)} dB`
+        : `${seenPct}% (${normalCount}/${evalPts.length})`
+    };
+  }
+
+  function createVisualFieldSession(options = {}) {
+    const patternId = VF_PATTERNS[options.patternId] ? options.patternId : '24-2';
+    const strategy = options.strategy === 'threshold' ? 'threshold' : 'suprathreshold';
+    const eyeMode = options.eyeMode || 'OD';
+    const goldmannSize = GOLDMANN_SIZES_DEG[options.goldmannSize] ? options.goldmannSize : 'III';
+    const rng = options.rng || Math.random;
+
+    const grid = buildVisualFieldGrid(patternId, eyeMode);
+    const points = grid.points.map(gp => {
+      const screenDb = gp.isBlindSpotLocus ? 18 : Math.max(16, gp.expectedDb - 6);
+      const startThreshDb = gp.isBlindSpotLocus ? 20 : Math.min(30, Math.max(18, gp.expectedDb - 2));
+      return {
+        ...gp,
+        screenDb,
+        currentDb: strategy === 'threshold' ? startThreshDb : screenDb,
+        stepDb: 4,
+        lastDir: 0,
+        reversals: 0,
+        floorChecked: false,
+        trials: 0,
+        lastSeenDb: null,
+        finalDb: null,
+        defectClass: 'untested', // 'untested' | 'normal' | 'relative' | 'deep' | 'blind_spot'
+        done: false,
+        history: []
+      };
+    });
+
+    // Fisher-Yates randomized presentation queue so subjects cannot predict flash locations
+    const pendingQueue = points.map((_, idx) => idx);
+    for (let i = pendingQueue.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = pendingQueue[i];
+      pendingQueue[i] = pendingQueue[j];
+      pendingQueue[j] = tmp;
+    }
+
+    return {
+      status: 'active', // 'active' | 'complete'
+      patternId,
+      strategy,
+      eyeMode,
+      goldmannSize,
+      rng,
+      blindSpotCenter: grid.blindSpotCenter,
+      maxEccentricityDeg: grid.maxEccentricityDeg,
+      points,
+      pendingQueue,
+      seenPointIndices: [],
+      stepCounter: 0,
+      completedTrials: 0,
+      bsCatchTotal: 0,
+      fixationLosses: 0,
+      fpCatchTotal: 0,
+      falsePositives: 0,
+      unsolicitedClicks: 0,
+      fnCatchTotal: 0,
+      falseNegatives: 0,
+      gazeFixationWarnings: 0,
+      activeStimulus: null,
+      lastEventText: 'Stare at the central diamond…',
+      result: null
+    };
+  }
+
+  function nextVisualFieldStimulus(vf, options = {}) {
+    if (!vf || vf.status !== 'active') return null;
+    if (vf.activeStimulus) return vf.activeStimulus;
+    const rng = options.rng || vf.rng || Math.random;
+
+    if (vf.pendingQueue.length === 0) {
+      vf.status = 'complete';
+      vf.result = finalizeVisualFieldSession(vf);
+      return null;
+    }
+
+    vf.stepCounter += 1;
+
+    // 1. Heijl-Krakau Physiological Blind-Spot Catch Trial (every 8th step on monocular OD/OS)
+    if (vf.blindSpotCenter && vf.stepCounter % 8 === 0) {
+      vf.activeStimulus = {
+        kind: 'blind_spot',
+        pointIdx: -1,
+        xDeg: vf.blindSpotCenter.xDeg,
+        yDeg: vf.blindSpotCenter.yDeg,
+        db: 14,
+        isBlank: false,
+        responded: false
+      };
+      return vf.activeStimulus;
+    }
+
+    // 2. False-Positive Blank Catch Interval (every 11th step)
+    if (vf.stepCounter % 11 === 0) {
+      vf.activeStimulus = {
+        kind: 'false_positive',
+        pointIdx: -1,
+        xDeg: 0,
+        yDeg: 0,
+        db: null,
+        isBlank: true,
+        responded: false
+      };
+      return vf.activeStimulus;
+    }
+
+    // 3. False-Negative Suprathreshold Catch Trial (every 13th step once >= 3 points seen)
+    if (vf.seenPointIndices.length >= 3 && vf.stepCounter % 13 === 0) {
+      const pick = vf.seenPointIndices[Math.floor(rng() * vf.seenPointIndices.length)];
+      const refPt = vf.points[pick];
+      const refDb = refPt.lastSeenDb !== null ? refPt.lastSeenDb : refPt.screenDb;
+      vf.activeStimulus = {
+        kind: 'false_negative',
+        pointIdx: pick,
+        xDeg: refPt.xDeg,
+        yDeg: refPt.yDeg,
+        db: Math.max(14, refDb - 6),
+        isBlank: false,
+        responded: false
+      };
+      return vf.activeStimulus;
+    }
+
+    // 4. Standard Perimetry Grid Point Trial
+    const ptIdx = vf.pendingQueue.shift();
+    const pt = vf.points[ptIdx];
+    vf.activeStimulus = {
+      kind: 'point',
+      pointIdx: ptIdx,
+      xDeg: pt.xDeg,
+      yDeg: pt.yDeg,
+      db: pt.currentDb,
+      isBlank: false,
+      responded: false
+    };
+    return vf.activeStimulus;
+  }
+
+  function resolveVisualFieldStimulus(vf, seen, options = {}) {
+    if (!vf || vf.status !== 'active' || !vf.activeStimulus) return vf;
+    const rng = options.rng || vf.rng || Math.random;
+    const stim = vf.activeStimulus;
+    const didSee = !!seen;
+
+    if (stim.kind === 'blind_spot') {
+      vf.bsCatchTotal += 1;
+      if (didSee) {
+        vf.fixationLosses += 1;
+        vf.lastEventText = 'Fixation check: keep gaze steady on center diamond!';
+      } else {
+        vf.lastEventText = 'Steady fixation verified (blind spot silent).';
+      }
+    } else if (stim.kind === 'false_positive') {
+      vf.fpCatchTotal += 1;
+      if (didSee) {
+        vf.falsePositives += 1;
+        vf.lastEventText = 'Catch trial: clicked with no flash — wait to see a light!';
+      }
+    } else if (stim.kind === 'false_negative') {
+      vf.fnCatchTotal += 1;
+      if (!didSee) {
+        vf.falseNegatives += 1;
+      }
+    } else if (stim.kind === 'point') {
+      const pt = vf.points[stim.pointIdx];
+      pt.trials += 1;
+      pt.history.push({ db: stim.db, seen: didSee });
+
+      if (didSee) {
+        pt.lastSeenDb = stim.db;
+        if (!pt.isBlindSpotLocus && !vf.seenPointIndices.includes(pt.index)) {
+          vf.seenPointIndices.push(pt.index);
+        }
+      }
+
+      const enqueueLater = () => {
+        const offset = Math.min(vf.pendingQueue.length, 2 + Math.floor(rng() * 4));
+        vf.pendingQueue.splice(offset, 0, pt.index);
+      };
+
+      if (vf.strategy === 'suprathreshold') {
+        if (pt.trials === 1) {
+          if (didSee) {
+            pt.finalDb = pt.expectedDb;
+            pt.defectClass = 'normal';
+            pt.done = true;
+          } else {
+            // Missed screening level -> schedule Pass 2 confirmation at max HMD contrast (14 dB)
+            pt.currentDb = 14;
+            enqueueLater();
+          }
+        } else {
+          if (didSee) {
+            pt.finalDb = Math.max(15, Math.round((pt.screenDb + 14) * 0.5));
+            pt.defectClass = pt.isBlindSpotLocus ? 'blind_spot' : 'relative';
+          } else {
+            pt.finalDb = 12; // < 14 dB HMD dynamic-range floor
+            pt.defectClass = pt.isBlindSpotLocus ? 'blind_spot' : 'deep';
+          }
+          pt.done = true;
+        }
+      } else {
+        // Adaptive 4-2 dB Bracketing Staircase within [14 dB .. 34 dB] VR dynamic range
+        const dir = didSee ? 1 : -1;
+        if (pt.lastDir !== 0 && dir !== pt.lastDir) {
+          pt.reversals += 1;
+          pt.stepDb = 2;
+        }
+        pt.lastDir = dir;
+
+        if (pt.reversals >= 2) {
+          pt.finalDb = didSee ? stim.db : Math.min(34, stim.db + 1);
+          pt.done = true;
+        } else if (!didSee && stim.db <= 14) {
+          if (pt.floorChecked) {
+            pt.finalDb = 12; // Confirmed < 14 dB floor
+            pt.done = true;
+          } else {
+            pt.floorChecked = true;
+            pt.currentDb = 14;
+            enqueueLater();
+          }
+        } else if (didSee && stim.db >= 34) {
+          pt.finalDb = 34;
+          pt.done = true;
+        } else if (pt.trials >= 5) {
+          pt.finalDb = pt.lastSeenDb !== null ? pt.lastSeenDb : 12;
+          pt.done = true;
+        } else {
+          pt.currentDb = Math.max(14, Math.min(34, stim.db + dir * pt.stepDb));
+          enqueueLater();
+        }
+
+        if (pt.done) {
+          if (pt.isBlindSpotLocus && pt.finalDb < 18) {
+            pt.defectClass = 'blind_spot';
+          } else {
+            const td = pt.finalDb - pt.expectedDb;
+            if (pt.finalDb < 14 || td <= -10) pt.defectClass = 'deep';
+            else if (td <= -5) pt.defectClass = 'relative';
+            else pt.defectClass = 'normal';
+          }
+        }
+      }
+    }
+
+    vf.activeStimulus = null;
+    vf.completedTrials += 1;
+
+    if (vf.pendingQueue.length === 0) {
+      vf.status = 'complete';
+      vf.result = finalizeVisualFieldSession(vf);
+    }
+    return vf;
+  }
+
   return {
     DEG_TO_RAD,
+    RAD_TO_DEG,
     ARCMIN_TO_RAD,
     SNELLEN_ROWS,
     ETDRS_ROWS,
     CHART_TYPES,
     CLASSIC_1862_SNELLEN,
     DIR_ARROWS,
+    GOLDMANN_SIZES_DEG,
+    VF_PATTERNS,
     marFromFootDenom,
     optotypeAngleRad,
     optotypeHeightMeters,
@@ -1594,7 +2263,19 @@ const SnellenCore = (() => {
     parseSpokenTokens,
     createExamSession,
     getExamTargetItem,
-    submitExamResponse
+    submitExamResponse,
+    vfStimulusDiameterMeters,
+    vfSphericalPointMeters,
+    vfTangentPointMeters,
+    linearToSrgb,
+    vfDecibelToLuminance,
+    vfExpectedNormalDb,
+    buildVisualFieldGrid,
+    parseVfSpokenResponse,
+    createVisualFieldSession,
+    nextVisualFieldStimulus,
+    resolveVisualFieldStimulus,
+    finalizeVisualFieldSession
   };
 })();
 
@@ -1607,10 +2288,15 @@ if (typeof window !== 'undefined') {
 (() => {
   if (typeof document === 'undefined') return;
 
+  const getNowMs = () => (typeof performance !== 'undefined' && typeof performance.now === 'function')
+    ? performance.now()
+    : Date.now();
+
   // ==========================================================================
   // Application State
   // ==========================================================================
   const state = {
+    appMode: 'acuity',       // 'acuity' | 'vf' (Visual Field Static Perimetry)
     viewMode: '3d',          // '3d' | '2d'
     chartTypeId: 'snellen',
     landolt8: false,
@@ -1638,6 +2324,21 @@ if (typeof window !== 'undefined') {
     micPermission: 'unknown', // 'unknown' | 'prompt' | 'granted' | 'denied'
     xrSupported: false,
     pendingXRResumeMode: null,
+
+    // Static Automated Visual Field (Perimetry) State
+    vfPatternId: '24-2',     // '24-2' | 'fast-28' | '10-2'
+    vfStrategy: 'suprathreshold', // 'suprathreshold' | 'threshold'
+    vfGoldmannSize: 'III',   // 'III' (0.431 deg) | 'V' (1.724 deg)
+    vfHeadLock: true,        // Stabilizes perimeter dome to head pose in VR (chinrest-free)
+    vfBlindSpotDemo: false,  // Pulses 15 deg temporal stimulus while idle to locate physiological blind spot
+    vf: null,
+    vfScores: { OD: null, OS: null, OU: null },
+    vfPhase: 'idle',         // 'idle' | 'isi' | 'flash' | 'window'
+    vfPhaseUntilMs: 0,
+    vfFlashOnsetMs: 0,
+    vfClickAckUntilMs: 0,
+    vfLiveGazeDeg: null,
+    vfHeadRotMatrix: null,
 
     // 3D Camera / World Anchor State
     eyePos: [0, 1.60, 0],    // Cyclopean / active eye position in world meters
@@ -1780,6 +2481,32 @@ if (typeof window !== 'undefined') {
         m[1] * d[0] + m[5] * d[1] + m[9] * d[2],
         m[2] * d[0] + m[6] * d[1] + m[10] * d[2]
       ];
+    },
+    extractRotation(m) {
+      return new Float32Array([
+        m[0], m[1], m[2], 0,
+        m[4], m[5], m[6], 0,
+        m[8], m[9], m[10], 0,
+        0, 0, 0, 1
+      ]);
+    },
+    orientDiscOnDome(pos, normal, diameter) {
+      const [nx, ny, nz] = normal;
+      const upRef = Math.abs(ny) > 0.96 ? [1, 0, 0] : [0, 1, 0];
+      let rx = upRef[1] * nz - upRef[2] * ny;
+      let ry = upRef[2] * nx - upRef[0] * nz;
+      let rz = upRef[0] * ny - upRef[1] * nx;
+      const rLen = Math.hypot(rx, ry, rz) || 1;
+      rx /= rLen; ry /= rLen; rz /= rLen;
+      const ux = ny * rz - nz * ry;
+      const uy = nz * rx - nx * rz;
+      const uz = nx * ry - ny * rx;
+      return new Float32Array([
+        rx * diameter, ry * diameter, rz * diameter, 0,
+        ux * diameter, uy * diameter, uz * diameter, 0,
+        nx, ny, nz, 0,
+        pos[0], pos[1], pos[2], 1
+      ]);
     }
   };
 
@@ -1940,6 +2667,12 @@ if (typeof window !== 'undefined') {
   let chartHqQuadsVAO = null;
   let chartHqQuadsVBO = null;
   let chartHqVertCount = 0;
+  let vfDomeVAO = null;
+  let vfDomeVertCount = 0;
+  let vfDomeGridVAO = null;
+  let vfDomeGridVertCount = 0;
+  let vfDiscVAO = null;
+  let vfDiscVertCount = 0;
 
   if (gl) {
     // Solid unit quad
@@ -2020,6 +2753,103 @@ if (typeof window !== 'undefined') {
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
+
+    // 3D Concave Hemispherical Perimeter Bowl (unit radius 1.0, 0..42 deg eccentricity)
+    {
+      const domeTris = [];
+      const rings = 16;
+      const sectors = 48;
+      const maxRad = 42 * SnellenCore.DEG_TO_RAD;
+      const sphPt = (rIdx, sIdx) => {
+        const e = (rIdx / rings) * maxRad;
+        const a = (sIdx / sectors) * Math.PI * 2;
+        const se = Math.sin(e);
+        return [se * Math.cos(a), se * Math.sin(a), -Math.cos(e)];
+      };
+      for (let r = 0; r < rings; r++) {
+        for (let s = 0; s < sectors; s++) {
+          const p00 = sphPt(r, s);
+          const p10 = sphPt(r + 1, s);
+          const p11 = sphPt(r + 1, s + 1);
+          const p01 = sphPt(r, s + 1);
+          domeTris.push(
+            p00[0], p00[1], p00[2],
+            p10[0], p10[1], p10[2],
+            p11[0], p11[1], p11[2],
+            p00[0], p00[1], p00[2],
+            p11[0], p11[1], p11[2],
+            p01[0], p01[1], p01[2]
+          );
+        }
+      }
+      vfDomeVertCount = domeTris.length / 3;
+      vfDomeVAO = gl.createVertexArray();
+      gl.bindVertexArray(vfDomeVAO);
+      const dmBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, dmBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(domeTris), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+      // Iso-eccentricity rings (10, 20, 30, 40 deg) + radial meridians slightly proud (r = 0.9985)
+      const gLines = [];
+      const ringDegs = [10, 20, 30, 40];
+      const segs = 64;
+      for (const deg of ringDegs) {
+        const e = deg * SnellenCore.DEG_TO_RAD;
+        const se = Math.sin(e) * 0.9985;
+        const ce = -Math.cos(e) * 0.9985;
+        for (let i = 0; i < segs; i++) {
+          const a0 = (i / segs) * Math.PI * 2;
+          const a1 = ((i + 1) / segs) * Math.PI * 2;
+          gLines.push(
+            se * Math.cos(a0), se * Math.sin(a0), ce,
+            se * Math.cos(a1), se * Math.sin(a1), ce
+          );
+        }
+      }
+      for (let m = 0; m < 8; m++) {
+        const phi = (m / 8) * Math.PI * 2;
+        const cp = Math.cos(phi), sp = Math.sin(phi);
+        for (let step = 0; step < 16; step++) {
+          const e0 = (step / 16) * (40 * SnellenCore.DEG_TO_RAD);
+          const e1 = ((step + 1) / 16) * (40 * SnellenCore.DEG_TO_RAD);
+          gLines.push(
+            Math.sin(e0) * cp * 0.9985, Math.sin(e0) * sp * 0.9985, -Math.cos(e0) * 0.9985,
+            Math.sin(e1) * cp * 0.9985, Math.sin(e1) * sp * 0.9985, -Math.cos(e1) * 0.9985
+          );
+        }
+      }
+      vfDomeGridVertCount = gLines.length / 3;
+      vfDomeGridVAO = gl.createVertexArray();
+      gl.bindVertexArray(vfDomeGridVAO);
+      const dgBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, dgBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gLines), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+      // Smooth 36-segment unit-diameter circular Goldmann stimulus disc (radius = 0.5 on Z=0)
+      const discTris = [];
+      const discSegs = 36;
+      for (let i = 0; i < discSegs; i++) {
+        const a0 = (i / discSegs) * Math.PI * 2;
+        const a1 = ((i + 1) / discSegs) * Math.PI * 2;
+        discTris.push(
+          0, 0, 0,
+          0.5 * Math.cos(a0), 0.5 * Math.sin(a0), 0,
+          0.5 * Math.cos(a1), 0.5 * Math.sin(a1), 0
+        );
+      }
+      vfDiscVertCount = discTris.length / 3;
+      vfDiscVAO = gl.createVertexArray();
+      gl.bindVertexArray(vfDiscVAO);
+      const dcBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, dcBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(discTris), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    }
 
     gl.bindVertexArray(null);
   }
@@ -2255,11 +3085,205 @@ if (typeof window !== 'undefined') {
   const PANEL_HEIGHT_M = 0.425;
   const vrButtons = [];
 
+  function drawPolyCircle(ctx, cx, cy, r, segs = 28) {
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      const px = cx + r * Math.cos(a);
+      const py = cy + r * Math.sin(a);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  function drawVisualFieldPolarMap(ctx, x0, y0, w, h, opts = {}) {
+    const activeEye = (state.vf && state.vf.eyeMode) ? state.vf.eyeMode : state.eyeMode;
+    const patId = (state.vf && state.vf.patternId) ? state.vf.patternId : state.vfPatternId;
+    const grid = state.vf || SnellenCore.buildVisualFieldGrid(patId, activeEye);
+    const maxDeg = patId === '10-2' ? 11.5 : 30.0;
+
+    ctx.fillStyle = opts.cardBg || '#0b0f18';
+    ctx.strokeStyle = '#293548';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x0, y0, w, h, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    const cx = x0 + w * 0.5;
+    const cy = y0 + h * 0.48;
+    const maxR = Math.min(w * 0.44, h * 0.40);
+    const pxPerDeg = maxR / maxDeg;
+
+    // Concentric iso-eccentricity circles & crosshairs
+    const rings = patId === '10-2' ? [5, 10] : [10, 20, 30];
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1.5;
+    for (const rd of rings) {
+      drawPolyCircle(ctx, cx, cy, rd * pxPerDeg, 36);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - maxR, cy);
+    ctx.lineTo(cx + maxR, cy);
+    ctx.moveTo(cx, cy - maxR);
+    ctx.lineTo(cx, cy + maxR);
+    ctx.stroke();
+
+    // Nasal / Temporal anatomical orientation labels
+    ctx.fillStyle = '#64748b';
+    ctx.font = `600 ${opts.large ? '15px' : '10px'} -apple-system, BlinkMacSystemFont, sans-serif`;
+    ctx.textBaseline = 'middle';
+    const leftLabel = activeEye === 'OD' ? 'NASAL' : (activeEye === 'OS' ? 'TEMP' : 'LEFT');
+    const rightLabel = activeEye === 'OD' ? 'TEMP' : (activeEye === 'OS' ? 'NASAL' : 'RIGHT');
+    ctx.textAlign = 'left';
+    ctx.fillText(leftLabel, x0 + 8, y0 + 14);
+    ctx.textAlign = 'right';
+    ctx.fillText(rightLabel, x0 + w - 8, y0 + 14);
+
+    // Physiological Blind Spot triangle marker (+/-15, -1.5 deg)
+    if (grid.blindSpotCenter && patId !== '10-2') {
+      const bx = cx + grid.blindSpotCenter.xDeg * pxPerDeg;
+      const by = cy - grid.blindSpotCenter.yDeg * pxPerDeg;
+      const tr = Math.max(5, 2.2 * pxPerDeg);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(bx, by - tr);
+      ctx.lineTo(bx + tr * 0.9, by + tr * 0.75);
+      ctx.lineTo(bx - tr * 0.9, by + tr * 0.75);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    // Perimetry Grid Points (HFA-style grayscale/color sensitivity cells + numeric dB)
+    const stepDeg = patId === '10-2' ? 1.85 : 5.3;
+    const cellSz = Math.max(opts.large ? 16 : 11, stepDeg * pxPerDeg * 0.88);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.max(8, Math.round(cellSz * 0.46))}px -apple-system, BlinkMacSystemFont, sans-serif`;
+
+    for (const pt of grid.points) {
+      const px = cx + pt.xDeg * pxPerDeg;
+      const py = cy - pt.yDeg * pxPerDeg;
+      const cls = pt.defectClass || 'untested';
+
+      if (cls === 'untested') {
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.22)';
+        drawPolyCircle(ctx, px, py, Math.max(2.5, cellSz * 0.22), 14);
+        ctx.fill();
+        continue;
+      }
+
+      let bg = 'rgba(16, 185, 129, 0.24)';
+      let brd = '#10b981';
+      let fg = '#d1fae5';
+      let txt = pt.finalDb !== null ? (pt.finalDb < 14 ? '<14' : String(pt.finalDb)) : '✓';
+
+      if (cls === 'relative') {
+        bg = 'rgba(245, 158, 11, 0.34)';
+        brd = '#f59e0b';
+        fg = '#fef3c7';
+      } else if (cls === 'deep') {
+        bg = 'rgba(185, 28, 28, 0.68)';
+        brd = '#f87171';
+        fg = '#fee2e2';
+        txt = '<14';
+      } else if (cls === 'blind_spot') {
+        bg = 'rgba(71, 85, 105, 0.55)';
+        brd = '#94a3b8';
+        fg = '#e2e8f0';
+        txt = 'BS';
+      }
+
+      ctx.fillStyle = bg;
+      ctx.strokeStyle = brd;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.roundRect(px - cellSz * 0.5, py - cellSz * 0.5, cellSz, cellSz, 3);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = fg;
+      ctx.fillText(txt, px, py + 0.5);
+    }
+
+    // Bottom legend
+    ctx.font = `600 ${opts.large ? '13px' : '9.5px'} -apple-system, BlinkMacSystemFont, sans-serif`;
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'center';
+    ctx.fillText('Green: Normal  •  Amber: Relative  •  Red (<14 dB): Deep Defect  •  △ Blind Spot', cx, y0 + h - 10);
+  }
+
   function buildVRButtons() {
     vrButtons.length = 0;
     const addBtn = (id, label, x, y, w, h, isActiveFn, accent, action) => {
       vrButtons.push({ id, label, x, y, w, h, isActiveFn, accent, action });
     };
+
+    // Visual Field (Static Perimetry) 3D Console Modes
+    if (state.appMode === 'vf') {
+      // VF Mode 1: Active Visual Field Test -> Giant low-distraction SEEN Clicker + Stop
+      if (state.vf && state.vf.status === 'active') {
+        addBtn(
+          'vf_seen',
+          '● SEEN — CLICK / TRIGGER / PINCH',
+          40,
+          215,
+          1200,
+          210,
+          () => false,
+          'amber',
+          () => recordVfClick()
+        );
+        addBtn('vf_voice', state.voiceEnabled ? '🎤 Voice: ON' : '🎤 Voice: OFF', 40, 468, 360, 74, () => state.voiceEnabled, state.voiceEnabled ? 'green' : null, () => toggleVoiceInput());
+        addBtn('vf_recenter', 'Recenter Dome', 425, 468, 390, 74, () => false, null, () => recenterChart());
+        addBtn('vf_stop', '✕ Stop VF Test', 840, 468, 400, 74, () => false, 'red', () => cancelVisualField());
+        return;
+      }
+
+      // VF Mode 2: Completed Visual Field Summary + HFA Map
+      if (state.vf && state.vf.status === 'complete') {
+        addBtn('vf_retry', `↻ Retest (${state.eyeMode})`, 40, 488, 285, 72, () => false, 'green', () => startVisualField());
+        addBtn('vf_od', 'Test Right (OD)', 342, 488, 285, 72, () => state.eyeMode === 'OD', null, () => { setEyeMode('OD'); startVisualField(); });
+        addBtn('vf_os', 'Test Left (OS)', 644, 488, 285, 72, () => state.eyeMode === 'OS', null, () => { setEyeMode('OS'); startVisualField(); });
+        addBtn('vf_settings', 'VF Settings', 946, 488, 294, 72, () => false, 'blue', () => cancelVisualField());
+        addBtn('vf_back_acuity', '← Switch Back to Snellen Visual Acuity Chart', 40, 580, 1200, 62, () => false, null, () => setAppMode('acuity'));
+        return;
+      }
+
+      // VF Mode 3: Visual Field Configuration & 15 deg Blind-Spot Demo
+      addBtn('vf_start', `▶ Start VF (${state.eyeMode})`, 40, 128, 330, 78, () => false, 'green', () => startVisualField());
+      addBtn('vf_bs_demo', state.vfBlindSpotDemo ? '15° Blind Spot: ON' : '15° Blind-Spot Demo', 388, 128, 300, 78, () => state.vfBlindSpotDemo, null, () => setVfBlindSpotDemo(!state.vfBlindSpotDemo));
+      addBtn('vf_headlock', state.vfHeadLock ? 'Head-Lock: ON' : 'Head-Lock: OFF', 706, 128, 255, 78, () => state.vfHeadLock, null, () => setVfHeadLock(!state.vfHeadLock));
+      addBtn('vf_to_acuity', '← Acuity Chart', 978, 128, 262, 78, () => false, 'blue', () => setAppMode('acuity'));
+
+      // Row 2: Grid Pattern & Strategy
+      addBtn('vfp_242', '24-2 (54pt)', 40, 236, 225, 68, () => state.vfPatternId === '24-2', null, () => setVfPattern('24-2'));
+      addBtn('vfp_f28', 'Fast-28', 280, 236, 205, 68, () => state.vfPatternId === 'fast-28', null, () => setVfPattern('fast-28'));
+      addBtn('vfp_102', '10-2 Macula', 500, 236, 220, 68, () => state.vfPatternId === '10-2', null, () => setVfPattern('10-2'));
+      addBtn('vfs_sup', 'Screen Mode', 740, 236, 240, 68, () => state.vfStrategy === 'suprathreshold', null, () => setVfStrategy('suprathreshold'));
+      addBtn('vfs_thr', '4–2 dB Stairs', 995, 236, 245, 68, () => state.vfStrategy === 'threshold', null, () => setVfStrategy('threshold'));
+
+      // Row 3: Goldmann Stimulus Size + Virtual Eye Occluder (Monocular Priority!)
+      addBtn('vfz_3', 'Size III (0.43°)', 40, 332, 250, 68, () => state.vfGoldmannSize === 'III', null, () => setVfSize('III'));
+      addBtn('vfz_5', 'Size V (1.72°)', 305, 332, 245, 68, () => state.vfGoldmannSize === 'V', null, () => setVfSize('V'));
+      addBtn('eye_OD', 'Right Eye (OD)', 570, 332, 220, 68, () => state.eyeMode === 'OD', null, () => setEyeMode('OD'));
+      addBtn('eye_OS', 'Left Eye (OS)', 805, 332, 220, 68, () => state.eyeMode === 'OS', null, () => setEyeMode('OS'));
+      addBtn('eye_OU', 'Both (OU)', 1040, 332, 200, 68, () => state.eyeMode === 'OU', null, () => setEyeMode('OU'));
+
+      // Row 4: Bowl Focal Plane Distance + OST Dark + Recenter + Exit XR
+      addBtn('dist_0.9', '0.9m GalaxyXR', 40, 428, 225, 66, () => Math.abs(state.targetDistance - 0.9) < 0.01, null, () => setTargetDistance(0.9));
+      addBtn('dist_1.3', '1.3m Quest3', 280, 428, 215, 66, () => Math.abs(state.targetDistance - 1.3) < 0.01, null, () => setTargetDistance(1.3));
+      addBtn('dist_1.5', '1.5m VR Bowl', 510, 428, 220, 66, () => Math.abs(state.targetDistance - 1.5) < 0.01, null, () => setTargetDistance(1.5));
+      addBtn('ost_dark', 'OST Dark', 745, 428, 160, 66, () => state.invertPolarity, null, () => setInvertPolarity(!state.invertPolarity));
+      addBtn('recenter', 'Recenter', 920, 428, 155, 66, () => false, 'blue', () => recenterChart());
+      addBtn('exit_xr', 'Exit XR', 1090, 428, 150, 66, () => false, 'red', () => {
+        if (state.xrSession) state.xrSession.end();
+      });
+      return;
+    }
 
     // Mode A: Active Scored Exam -> Context-Smart 3D Virtual Optotype Keypad
     if (state.exam && state.exam.status === 'active') {
@@ -2316,13 +3340,14 @@ if (typeof window !== 'undefined') {
       return;
     }
 
-    // Mode C: Standard Free-Explore Controls (with Start Scored Exam button!)
+    // Mode C: Standard Free-Explore Controls (with Scored Acuity Exam + Visual Field Perimetry buttons!)
     addBtn('cycle', '↻ Cycle Chart', 40, 128, 250, 78, () => false, 'green', () => cycleChart());
-    addBtn('start_exam', '▶ Start Scored Exam', 305, 128, 305, 78, () => false, 'blue', () => startExam());
-    addBtn('layout_full', 'Full', 625, 128, 120, 78, () => state.layoutMode === 'full', null, () => setLayoutMode('full'));
-    addBtn('layout_line', 'Line', 758, 128, 120, 78, () => state.layoutMode === 'line', null, () => setLayoutMode('line'));
-    addBtn('row_up', '▲ Row', 892, 128, 168, 78, () => false, null, () => stepActiveRow(-1));
-    addBtn('row_dn', '▼ Row', 1072, 128, 168, 78, () => false, null, () => stepActiveRow(1));
+    addBtn('start_exam', '▶ Acuity Exam', 302, 128, 222, 78, () => false, 'blue', () => startExam());
+    addBtn('mode_vf', '◎ Visual Field', 536, 128, 222, 78, () => false, 'amber', () => setAppMode('vf', { autoMonocular: true }));
+    addBtn('layout_full', 'Full', 770, 128, 96, 78, () => state.layoutMode === 'full', null, () => setLayoutMode('full'));
+    addBtn('layout_line', 'Line', 876, 128, 96, 78, () => state.layoutMode === 'line', null, () => setLayoutMode('line'));
+    addBtn('row_up', '▲ Row', 982, 128, 124, 78, () => false, null, () => stepActiveRow(-1));
+    addBtn('row_dn', '▼ Row', 1116, 128, 124, 78, () => false, null, () => stepActiveRow(1));
 
     // Row 2: Chart Types (6 clinical charts)
     const charts = [
@@ -2401,25 +3426,44 @@ if (typeof window !== 'undefined') {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     const activeRow = state.chartData.rows[Math.min(state.activeRowIdx, state.chartData.rows.length - 1)];
-    const headerTitle = state.exam
-      ? (state.exam.status === 'active'
-          ? `SCORED EXAM (${state.eyeMode})  •  Row ${activeRow.label}`
-          : `EXAM COMPLETE (${state.exam.result.eyeMode})`)
-      : `WebXR Clinical Acuity  •  Row: ${activeRow.label} (${activeRow.metric})`;
+    let headerTitle = '';
+    if (state.appMode === 'vf') {
+      const pName = SnellenCore.VF_PATTERNS[state.vfPatternId].shortName;
+      headerTitle = (state.vf && state.vf.status === 'active')
+        ? `VISUAL FIELD TEST (${state.eyeMode})  •  ${pName}`
+        : (state.vf && state.vf.status === 'complete'
+            ? `VISUAL FIELD COMPLETE (${state.vf.result.eyeMode})  •  ${pName}`
+            : `WebXR Visual Field Perimetry  •  ${pName} (${state.eyeMode})`);
+    } else {
+      headerTitle = state.exam
+        ? (state.exam.status === 'active'
+            ? `SCORED EXAM (${state.eyeMode})  •  Row ${activeRow.label}`
+            : `EXAM COMPLETE (${state.exam.result.eyeMode})`)
+        : `WebXR Clinical Acuity  •  Row: ${activeRow.label} (${activeRow.metric})`;
+    }
     ctx.fillText(headerTitle, 42, 66);
 
-    // Live distance & on-axis Render-Buffer PPD telemetry badge
+    // Live distance & on-axis Render-Buffer PPD / Goldmann telemetry badge
     ctx.textAlign = 'right';
     ctx.font = '600 24px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.fillStyle = '#93c5fd';
-    const ppdTxt = state.hmdPPD
-      ? `  |  Render ~${state.hmdPPD.toFixed(0)} PPD (~20/${SnellenCore.nyquistSnellenDenom(state.hmdPPD)})`
-      : '';
-    ctx.fillText(
-      `Dist: ${state.liveEyeDistance.toFixed(2)} m  |  20/20 = 5.00′${ppdTxt}`,
-      W - 42,
-      66
-    );
+    if (state.appMode === 'vf') {
+      const gDeg = SnellenCore.GOLDMANN_SIZES_DEG[state.vfGoldmannSize];
+      ctx.fillText(
+        `Bowl: ${state.liveEyeDistance.toFixed(2)} m  |  Size ${state.vfGoldmannSize} (${gDeg.toFixed(2)}°)  |  14–34 dB`,
+        W - 42,
+        66
+      );
+    } else {
+      const ppdTxt = state.hmdPPD
+        ? `  |  Render ~${state.hmdPPD.toFixed(0)} PPD (~20/${SnellenCore.nyquistSnellenDenom(state.hmdPPD)})`
+        : '';
+      ctx.fillText(
+        `Dist: ${state.liveEyeDistance.toFixed(2)} m  |  20/20 = 5.00′${ppdTxt}`,
+        W - 42,
+        66
+      );
+    }
 
     // Divider
     ctx.strokeStyle = '#293548';
@@ -2429,8 +3473,112 @@ if (typeof window !== 'undefined') {
     ctx.lineTo(W - 40, 104);
     ctx.stroke();
 
-    // Contextual Exam Prompt or Score Summary Card
-    if (state.exam && state.exam.status === 'active') {
+    // Contextual Exam / Visual Field Prompt or Score Summary Card
+    if (state.appMode === 'vf') {
+      if (state.vf && state.vf.status === 'active') {
+        const donePts = state.vf.points.filter(p => p.done).length;
+        const totPts = state.vf.points.length;
+        ctx.fillStyle = '#fde68a';
+        ctx.font = '700 24px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(
+          `Fixate steady on center diamond!  Progress: ${donePts}/${totPts} pts`,
+          42,
+          152
+        );
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '600 22px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(
+          `FL: ${state.vf.fixationLosses}/${state.vf.bsCatchTotal}   FP: ${state.vf.falsePositives + state.vf.unsolicitedClicks}   FN: ${state.vf.falseNegatives}/${state.vf.fnCatchTotal}`,
+          W - 42,
+          152
+        );
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '500 21px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(state.vf.lastEventText, 42, 188);
+      } else if (state.vf && state.vf.status === 'complete' && state.vf.result) {
+        const vr = state.vf.result;
+        drawVisualFieldPolarMap(ctx, 40, 124, 435, 344, { large: true, cardBg: '#090d16' });
+
+        ctx.fillStyle = vr.reliable ? 'rgba(16, 185, 129, 0.13)' : 'rgba(245, 158, 11, 0.14)';
+        ctx.strokeStyle = vr.reliable ? '#10b981' : '#f59e0b';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(495, 124, W - 535, 344, 18);
+        ctx.fill();
+        ctx.stroke();
+
+        const rCx = 495 + (W - 535) * 0.5;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '800 44px -apple-system, BlinkMacSystemFont, sans-serif';
+        const mdSign = vr.meanDeviation >= 0 ? '+' : '';
+        ctx.fillText(`${vr.eyeMode} MD: ${mdSign}${vr.meanDeviation.toFixed(2)} dB`, rCx, 180);
+
+        ctx.fillStyle = '#a7f3d0';
+        ctx.font = '600 26px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(
+          `PSD: ${vr.patternStdDev.toFixed(2)} dB   •   MS: ${vr.meanSensitivity.toFixed(1)} dB   •   Normal: ${vr.seenPct}%`,
+          rCx,
+          236
+        );
+
+        ctx.fillStyle = vr.reliable ? '#93c5fd' : '#fcd34d';
+        ctx.font = '600 22px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(
+          `${vr.reliabilityStatus}  (FL ${vr.fixationLosses}/${vr.bsCatchTotal} • FP ${vr.falsePositives} • FN ${vr.falseNegatives}/${vr.fnCatchTotal})`,
+          rCx,
+          288
+        );
+
+        const vfSummary = ['OD', 'OS', 'OU']
+          .map(e => `${e}: ${state.vfScores[e] ? state.vfScores[e].summaryTag : '—'}`)
+          .join('   |   ');
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '500 21px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(`VF Scorecard — ${vfSummary}`, rCx, 344);
+
+        ctx.fillStyle = '#fde68a';
+        ctx.font = '600 18px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(
+          'Non-diagnostic screener (~14 dB HMD floor) — NOT a clinical glaucoma/medical exam.',
+          rCx,
+          412
+        );
+      } else {
+        // Idle VF Disclaimer Banner on 3D Console
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.12)';
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.42)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(40, 518, W - 80, 146, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#fde68a';
+        ctx.font = '700 21px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          'NON-DIAGNOSTIC PERIMETRY DISCLAIMER: Educational & experimental self-screening tool only.',
+          W * 0.5,
+          556
+        );
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '500 19px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(
+          'Consumer headsets have uncalibrated luminance & a ~14 dB contrast floor vs. 10,000 asb clinical bowls.',
+          W * 0.5,
+          592
+        );
+        ctx.fillText(
+          'Test OD & OS monocularly. Consult an ophthalmologist or optometrist for clinical visual field care.',
+          W * 0.5,
+          626
+        );
+      }
+    } else if (state.exam && state.exam.status === 'active') {
       const phaseTxt = state.exam.phase === 'screening'
         ? 'Screening (1/row) — Read blue-underlined optotype'
         : `Verify ${activeRow.label} (${state.exam.trialInRow + 1}/5) — Read underlined`;
@@ -2500,6 +3648,10 @@ if (typeof window !== 'undefined') {
         bg = hovered ? '#3b82f6' : '#2563eb';
         border = '#60a5fa';
         fg = '#ffffff';
+      } else if (b.accent === 'amber') {
+        bg = hovered ? '#d97706' : '#b45309';
+        border = '#fbbf24';
+        fg = '#fffbeb';
       } else if (b.accent === 'red') {
         bg = hovered ? '#dc2626' : '#7f1d1d';
         border = '#f87171';
@@ -2522,7 +3674,7 @@ if (typeof window !== 'undefined') {
       ctx.stroke();
 
       ctx.fillStyle = fg;
-      const isKeypadKey = b.id.startsWith('ans_') && b.id !== 'ans_skip';
+      const isKeypadKey = (b.id.startsWith('ans_') && b.id !== 'ans_skip') || b.id === 'vf_seen';
       ctx.font = `${isKeypadKey ? '800 34px' : '700 23px'} -apple-system, BlinkMacSystemFont, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -2543,17 +3695,42 @@ if (typeof window !== 'undefined') {
     const modTag = state.xrInputModalities.length > 0
       ? `Active XR Input: ${state.xrInputModalities.join(' + ')}  •  `
       : '';
-    const footerTip = (state.exam && state.exam.status === 'active')
-      ? `${modTag}Answer via 3D Keypad (Pinch / Finger Poke / Gaze / Ray), Voice ("Charlie", "Up", "Skip"), or Stick`
-      : `${modTag}Supports Hand Poke & Pinch, Eye Look+Pinch (Galaxy XR / Aura / AVP), Gaze Dwell, & Controllers`;
+    let footerTip = '';
+    if (state.appMode === 'vf') {
+      footerTip = (state.vf && state.vf.status === 'active')
+        ? `${modTag}Pull VR Trigger, Pinch anywhere, press A/X, Spacebar, or say "Seen" when a peripheral flash appears`
+        : `${modTag}Keep gaze steady on center diamond during test • B/Y cycles OD/OS Eye Occluder`;
+    } else {
+      footerTip = (state.exam && state.exam.status === 'active')
+        ? `${modTag}Answer via 3D Keypad (Pinch / Finger Poke / Gaze / Ray), Voice ("Charlie", "Up", "Skip"), or Stick`
+        : `${modTag}Supports Hand Poke & Pinch, Eye Look+Pinch (Galaxy XR / Aura / AVP), Gaze Dwell, & Controllers`;
+    }
     ctx.fillText(footerTip, W * 0.5, 718);
 
     vrPanelLayer.upload();
   }
 
+  function getEffectivePanelPose() {
+    const vfRunning = !!(state.appMode === 'vf' && state.vf && state.vf.status === 'active');
+    if (vfRunning) {
+      // Lower console below -24 deg inferior visual field bowl so zero peripheral flashes are occluded
+      return {
+        pos: [state.panelPos[0], state.panelPos[1] - 0.44, state.panelPos[2]],
+        yaw: state.chartAnchorYaw,
+        pitch: -0.62
+      };
+    }
+    return {
+      pos: state.panelPos,
+      yaw: state.chartAnchorYaw,
+      pitch: state.panelPitch
+    };
+  }
+
   // Raycast against the 3D VR Control Panel plane
   function intersectRayWithPanel(rayOrigin, rayDir) {
-    const panelModel = M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch);
+    const pp = getEffectivePanelPose();
+    const panelModel = M4.trsYPR(pp.pos, pp.yaw, pp.pitch);
     const invPanel = M4.invertRigid(panelModel);
     const lo = M4.transformPoint(invPanel, rayOrigin);
     const ld = M4.transformDir(invPanel, rayDir);
@@ -2591,7 +3768,8 @@ if (typeof window !== 'undefined') {
 
   // Direct 3D index-finger-tip poke against the floating VR Control Console (XRHand)
   function checkFingerPokePanel(tipWorldPos) {
-    const panelModel = M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch);
+    const pp = getEffectivePanelPose();
+    const panelModel = M4.trsYPR(pp.pos, pp.yaw, pp.pitch);
     const invPanel = M4.invertRigid(panelModel);
     const lp = M4.transformPoint(invPanel, tipWorldPos);
 
@@ -2727,6 +3905,9 @@ if (typeof window !== 'undefined') {
   }
 
   function setEyeMode(mode) {
+    if (state.vf && state.vf.status === 'active' && mode !== state.eyeMode) {
+      cancelVisualField();
+    }
     state.eyeMode = mode;
     if (mode === 'OD') {
       updateOccluderTexture('LEFT EYE (OS) OCCLUDED', 'Testing Right Eye (OD)  •  Tap OU for Both Eyes');
@@ -2735,6 +3916,7 @@ if (typeof window !== 'undefined') {
     }
     panelDirty = true;
     updateSidebarUI();
+    if (state.viewMode === '2d' && state.appMode === 'vf') render2DChart();
   }
 
   function cycleEnvTheme() {
@@ -2884,12 +4066,238 @@ if (typeof window !== 'undefined') {
     rebuildChartGeometry();
   }
 
+  // ==========================================================================
+  // Static Automated Visual Field (Perimetry) Runtime & State Machine
+  // ==========================================================================
+  let lastVfClockMs = 0;
+  const vfMapCanvasEl = document.getElementById('vfMapCanvas');
+  const vfMapCtx = vfMapCanvasEl ? vfMapCanvasEl.getContext('2d') : null;
+
+  function renderSidebarVfMap() {
+    if (!vfMapCanvasEl || !vfMapCtx) return;
+    drawVisualFieldPolarMap(vfMapCtx, 0, 0, vfMapCanvasEl.width, vfMapCanvasEl.height, {
+      large: false,
+      cardBg: '#0b0f17'
+    });
+  }
+
+  function refreshViewportHint() {
+    const pill = document.getElementById('viewportHintPill');
+    if (!pill) return;
+    if (state.appMode === 'vf') {
+      pill.innerHTML = state.viewMode === '3d'
+        ? 'Visual Field Bowl • Fixate on center diamond • Press <strong>Space</strong> / Trigger / Click when a flash appears'
+        : '2D Calibrated Perimetry • Fixate on center diamond • Click screen or press <strong>Space</strong> on flash';
+    } else {
+      pill.innerHTML = state.viewMode === '3d'
+        ? 'Drag to look • Scroll to lean • Click 3D console or press <strong>Space</strong> to shuffle'
+        : '2D Calibrated Mode • Click <strong>Calibrate Screen</strong> to match physical monitor DPI';
+    }
+  }
+
+  function setAppMode(mode, opts = {}) {
+    const nextMode = mode === 'vf' ? 'vf' : 'acuity';
+    if (state.exam && state.exam.status === 'active') {
+      cancelExam();
+    }
+    if (state.vf && state.vf.status === 'active') {
+      cancelVisualField();
+    }
+    state.appMode = nextMode;
+    if (nextMode === 'vf' && opts.autoMonocular && state.eyeMode === 'OU') {
+      setEyeMode('OD');
+    }
+    refreshViewportHint();
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function setVfPattern(patternId) {
+    if (!SnellenCore.VF_PATTERNS[patternId]) return;
+    if (state.vf && state.vf.status === 'active') cancelVisualField();
+    state.vfPatternId = patternId;
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function setVfStrategy(strategy) {
+    if (state.vf && state.vf.status === 'active') cancelVisualField();
+    state.vfStrategy = strategy === 'threshold' ? 'threshold' : 'suprathreshold';
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function setVfSize(sizeKey) {
+    if (state.vf && state.vf.status === 'active') cancelVisualField();
+    state.vfGoldmannSize = sizeKey === 'V' ? 'V' : 'III';
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function setVfHeadLock(enabled) {
+    state.vfHeadLock = !!enabled;
+    panelDirty = true;
+    updateSidebarUI();
+  }
+
+  function setVfBlindSpotDemo(enabled) {
+    state.vfBlindSpotDemo = !!enabled;
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function startVisualField(opts = {}) {
+    if (state.appMode !== 'vf') {
+      state.appMode = 'vf';
+      refreshViewportHint();
+    }
+    if (state.exam && state.exam.status === 'active') {
+      state.exam = null;
+    }
+    state.vf = SnellenCore.createVisualFieldSession({
+      patternId: state.vfPatternId,
+      strategy: state.vfStrategy,
+      eyeMode: state.eyeMode,
+      goldmannSize: state.vfGoldmannSize,
+      rng: opts.rng
+    });
+    const nowMs = typeof opts.nowMs === 'number' ? opts.nowMs : (lastVfClockMs > 0 ? lastVfClockMs : getNowMs());
+    lastVfClockMs = nowMs;
+    state.vfPhase = 'isi';
+    state.vfPhaseUntilMs = nowMs + 650;
+    state.vfFlashOnsetMs = 0;
+    state.vfClickAckUntilMs = 0;
+    state.vfLiveGazeDeg = null;
+    if (state.voiceEnabled) ensureSpeechRecognitionRunning();
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function cancelVisualField() {
+    state.vf = null;
+    state.vfPhase = 'idle';
+    state.vfPhaseUntilMs = 0;
+    state.vfFlashOnsetMs = 0;
+    state.vfClickAckUntilMs = 0;
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+  }
+
+  function recordVfClick(clickTimeMs) {
+    const nowMs = typeof clickTimeMs === 'number' ? clickTimeMs : (lastVfClockMs > 0 ? lastVfClockMs : getNowMs());
+    state.vfClickAckUntilMs = nowMs + 160;
+    if (!state.vf || state.vf.status !== 'active') {
+      panelDirty = true;
+      if (state.viewMode === '2d') render2DChart();
+      return false;
+    }
+
+    const stim = state.vf.activeStimulus;
+    if ((state.vfPhase === 'flash' || state.vfPhase === 'window') && stim && !stim.responded) {
+      stim.responded = true;
+      if (state.vfPhase === 'window') {
+        state.vfPhaseUntilMs = Math.min(state.vfPhaseUntilMs, nowMs + 150);
+      }
+      panelDirty = true;
+      if (state.viewMode === '2d') render2DChart();
+      return true;
+    }
+
+    // Clicks during inter-stimulus interval (ISI) or duplicate clicks count as false-positive trigger noise
+    state.vf.unsolicitedClicks += 1;
+    state.vf.lastEventText = 'Early/extra click without active stimulus (counted as False Positive)';
+    panelDirty = true;
+    updateSidebarUI();
+    if (state.viewMode === '2d') render2DChart();
+    return false;
+  }
+
+  function tickVisualFieldRuntime(nowTimeMs, gazeAngleDeg = null) {
+    const nowMs = typeof nowTimeMs === 'number' ? nowTimeMs : getNowMs();
+    lastVfClockMs = nowMs;
+    state.vfLiveGazeDeg = typeof gazeAngleDeg === 'number' ? gazeAngleDeg : null;
+
+    if (state.appMode !== 'vf') return;
+
+    // Animate 2D idle blind-spot demo pulse cleanly
+    if ((!state.vf || state.vf.status !== 'active') && state.vfBlindSpotDemo && state.viewMode === '2d') {
+      render2DChart();
+      return;
+    }
+
+    if (!state.vf || state.vf.status !== 'active') return;
+
+    if (nowMs >= state.vfPhaseUntilMs) {
+      if (state.vfPhase === 'isi') {
+        const stim = SnellenCore.nextVisualFieldStimulus(state.vf);
+        if (!stim || state.vf.status === 'complete') {
+          state.vfPhase = 'idle';
+          if (state.vf.result) {
+            state.vfScores[state.vf.result.eyeMode] = state.vf.result;
+          }
+          panelDirty = true;
+          updateSidebarUI();
+          if (state.viewMode === '2d') render2DChart();
+          return;
+        }
+        state.vfPhase = 'flash';
+        state.vfFlashOnsetMs = nowMs;
+        state.vfPhaseUntilMs = nowMs + 200; // Clinical 200 ms Goldmann flash duration
+        panelDirty = true;
+        if (state.viewMode === '2d') render2DChart();
+      } else if (state.vfPhase === 'flash') {
+        state.vfPhase = 'window';
+        const alreadySeen = !!(state.vf.activeStimulus && state.vf.activeStimulus.responded);
+        state.vfPhaseUntilMs = nowMs + (alreadySeen ? 140 : 850); // 200ms flash + 850ms window = 1050ms total
+        if (state.viewMode === '2d') render2DChart();
+      } else if (state.vfPhase === 'window') {
+        const seen = !!(state.vf.activeStimulus && state.vf.activeStimulus.responded);
+        SnellenCore.resolveVisualFieldStimulus(state.vf, seen);
+        if (state.vf.status === 'complete') {
+          state.vfPhase = 'idle';
+          if (state.vf.result) {
+            state.vfScores[state.vf.result.eyeMode] = state.vf.result;
+          }
+          panelDirty = true;
+          updateSidebarUI();
+          if (state.viewMode === '2d') render2DChart();
+          return;
+        }
+        const jitterMs = Math.round((state.vf.rng() - 0.5) * 260);
+        state.vfPhase = 'isi';
+        state.vfPhaseUntilMs = nowMs + Math.max(420, 580 + jitterMs);
+        panelDirty = true;
+        updateSidebarUI();
+        if (state.viewMode === '2d') render2DChart();
+      }
+    }
+
+    // Eye-tracking fixation deviation monitor during active 200 ms flash (on headsets exposing WebXR 'gaze' ray)
+    if (
+      state.vfPhase === 'flash' &&
+      typeof gazeAngleDeg === 'number' &&
+      gazeAngleDeg > 3.5 &&
+      state.vf.activeStimulus &&
+      !state.vf.activeStimulus._gazeWarned
+    ) {
+      state.vf.activeStimulus._gazeWarned = true;
+      state.vf.gazeFixationWarnings += 1;
+    }
+  }
+
   function ensureSpeechRecognitionRunning() {
     const SpeechCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechCtor) {
       state.voiceEnabled = false;
       state.voiceListening = false;
-      state.voiceStatusText = 'Speech API unavailable in this browser — use 3D Keypad / Stick';
+      state.voiceStatusText = 'Speech API unavailable in this browser — use 3D Keypad / Trigger';
       panelDirty = true;
       updateSidebarUI();
       return;
@@ -2907,7 +4315,9 @@ if (typeof window !== 'undefined') {
         }
         state.micPermission = 'granted';
         state.voiceListening = true;
-        state.voiceStatusText = 'Listening… say letter, direction, or "Skip"';
+        state.voiceStatusText = state.appMode === 'vf'
+          ? 'Listening… say "Seen" / "Yes" when a flash appears'
+          : 'Listening… say letter, direction, or "Skip"';
         panelDirty = true;
         updateSidebarUI();
       };
@@ -2916,6 +4326,21 @@ if (typeof window !== 'undefined') {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           if (!event.results[i].isFinal) continue;
           const raw = event.results[i][0].transcript.trim();
+
+          if (state.appMode === 'vf') {
+            if (SnellenCore.parseVfSpokenResponse(raw)) {
+              state.voiceStatusText = `Heard "${raw}" → SEEN`;
+              if (state.vf && state.vf.status === 'active') {
+                recordVfClick();
+              }
+            } else {
+              state.voiceStatusText = `Heard "${raw}" (say "Seen" or "Yes" on flash)`;
+            }
+            panelDirty = true;
+            updateSidebarUI();
+            continue;
+          }
+
           const tokens = SnellenCore.parseSpokenTokens(raw, state.chartTypeId, state.landolt8);
           if (tokens.length > 0) {
             state.voiceStatusText = `Heard "${raw}" → ${tokens.map(t => SnellenCore.DIR_ARROWS[t] || t).join(' ')}`;
@@ -3000,6 +4425,148 @@ if (typeof window !== 'undefined') {
   // ==========================================================================
   // 2D Calibrated Screen Mode Renderer
   // ==========================================================================
+  function render2DVisualField(cssW, cssH, mToCssPx) {
+    const cx = cssW * 0.5;
+    const cy = cssH * 0.5;
+    const lumRef = SnellenCore.vfDecibelToLuminance(30);
+    const bgByte = Math.round(lumRef.bgSrgb * 255);
+    ctx2d.fillStyle = state.invertPolarity ? '#090d16' : `rgb(${bgByte}, ${bgByte}, ${bgByte})`;
+    ctx2d.fillRect(0, 0, cssW, cssH);
+
+    const pat = SnellenCore.VF_PATTERNS[state.vfPatternId];
+    const maxDeg = pat.maxDeg + 2.5;
+    const availRadiusPx = Math.max(90, Math.min(cssW * 0.45, cssH * 0.42));
+    const reqRadiusPx = state.targetDistance * Math.tan(maxDeg * SnellenCore.DEG_TO_RAD) * mToCssPx;
+    // Auto-clamp effective near viewing distance if targetDistance would overflow 2D screen bounds
+    const effDistM = reqRadiusPx > availRadiusPx
+      ? (availRadiusPx / mToCssPx) / Math.tan(maxDeg * SnellenCore.DEG_TO_RAD)
+      : state.targetDistance;
+
+    const vfRunning = !!(state.vf && state.vf.status === 'active');
+
+    // Subtle iso-eccentricity rings (10, 20, 30 deg) & central meridians
+    const ringAlpha = vfRunning ? 0.045 : 0.14;
+    ctx2d.strokeStyle = `rgba(226, 232, 240, ${ringAlpha})`;
+    ctx2d.lineWidth = 1;
+    const rings = pat.maxDeg <= 12 ? [4, 8, 10] : [10, 20, 30];
+    for (const rDeg of rings) {
+      const rPx = effDistM * Math.tan(rDeg * SnellenCore.DEG_TO_RAD) * mToCssPx;
+      if (rPx < Math.max(cssW, cssH) * 0.65) {
+        drawPolyCircle(ctx2d, cx, cy, rPx, 48);
+        ctx2d.stroke();
+      }
+    }
+    const maxR = effDistM * Math.tan(pat.maxDeg * SnellenCore.DEG_TO_RAD) * mToCssPx;
+    ctx2d.beginPath();
+    ctx2d.moveTo(cx - maxR, cy);
+    ctx2d.lineTo(cx + maxR, cy);
+    ctx2d.moveTo(cx, cy - maxR);
+    ctx2d.lineTo(cx, cy + maxR);
+    ctx2d.stroke();
+
+    // Central amber/emerald fixation diamond (briefly flashes emerald to acknowledge click)
+    const nowClk = lastVfClockMs > 0 ? lastVfClockMs : getNowMs();
+    const clickAck = nowClk < state.vfClickAckUntilMs;
+    const fixR = 7.5;
+    ctx2d.fillStyle = clickAck ? '#34d399' : '#fbbf24';
+    ctx2d.beginPath();
+    ctx2d.moveTo(cx, cy - fixR);
+    ctx2d.lineTo(cx + fixR, cy);
+    ctx2d.lineTo(cx, cy + fixR);
+    ctx2d.lineTo(cx - fixR, cy);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.fillStyle = '#090d16';
+    drawPolyCircle(ctx2d, cx, cy, 2.2, 12);
+    ctx2d.fill();
+
+    // 1. Active Visual Field Goldmann Flash
+    if (vfRunning && state.vfPhase === 'flash' && state.vf.activeStimulus && !state.vf.activeStimulus.isBlank) {
+      const stim = state.vf.activeStimulus;
+      const [tx, ty] = SnellenCore.vfTangentPointMeters(effDistM, stim.xDeg, stim.yDeg);
+      const sx = cx + tx * mToCssPx;
+      const sy = cy - ty * mToCssPx;
+      const diamPx = Math.max(3.5, SnellenCore.vfStimulusDiameterMeters(effDistM, state.vfGoldmannSize) * mToCssPx);
+      const lum = SnellenCore.vfDecibelToLuminance(stim.db);
+      const sv = Math.round(lum.stimSrgb * 255);
+      ctx2d.fillStyle = `rgb(${sv}, ${sv}, ${sv})`;
+      drawPolyCircle(ctx2d, sx, sy, diamPx * 0.5, 24);
+      ctx2d.fill();
+    }
+
+    // 2. Idle 15 deg Physiological Blind-Spot Finder Demo
+    if (!vfRunning && state.vfBlindSpotDemo) {
+      const pulseOn = (Math.floor(getNowMs() / 500) % 2) === 0;
+      const bsXDeg = state.eyeMode === 'OS' ? -15 : 15;
+      const bsYDeg = -1.5;
+      const [tx, ty] = SnellenCore.vfTangentPointMeters(effDistM, bsXDeg, bsYDeg);
+      const sx = cx + tx * mToCssPx;
+      const sy = cy - ty * mToCssPx;
+      const diamPx = Math.max(6, SnellenCore.vfStimulusDiameterMeters(effDistM, state.vfGoldmannSize) * mToCssPx * 1.4);
+      if (pulseOn) {
+        ctx2d.fillStyle = '#ffffff';
+        drawPolyCircle(ctx2d, sx, sy, diamPx * 0.5, 24);
+        ctx2d.fill();
+      }
+      ctx2d.strokeStyle = 'rgba(96, 165, 250, 0.45)';
+      drawPolyCircle(ctx2d, sx, sy, diamPx * 0.85, 20);
+      ctx2d.stroke();
+    }
+
+    // 3. Completed Visual Field Overlay on 2D Tangent Screen
+    if (!vfRunning && state.vf && state.vf.status === 'complete') {
+      for (const p of state.vf.points) {
+        const [tx, ty] = SnellenCore.vfTangentPointMeters(effDistM, p.xDeg, p.yDeg);
+        const sx = cx + tx * mToCssPx;
+        const sy = cy - ty * mToCssPx;
+        if (p.isBlindSpotLocus) {
+          ctx2d.fillStyle = '#475569';
+          drawPolyCircle(ctx2d, sx, sy, 5, 14);
+          ctx2d.fill();
+          continue;
+        }
+        ctx2d.fillStyle = p.defectClass === 'normal'
+          ? '#10b981'
+          : (p.defectClass === 'relative' ? '#f59e0b' : '#ef4444');
+        drawPolyCircle(ctx2d, sx, sy, 6, 16);
+        ctx2d.fill();
+        ctx2d.fillStyle = '#f8fafc';
+        ctx2d.font = '700 10px -apple-system, sans-serif';
+        ctx2d.textAlign = 'center';
+        ctx2d.textBaseline = 'bottom';
+        const lbl = state.vf.strategy === 'threshold' && p.finalDb !== null
+          ? `${p.finalDb < 14 ? '<14' : Math.round(p.finalDb)}`
+          : (p.defectClass === 'normal' ? '✓' : (p.defectClass === 'relative' ? '∆' : '■'));
+        ctx2d.fillText(lbl, sx, sy - 8);
+      }
+    }
+
+    // Top calibrated near-distance guidance & bottom non-diagnostic disclaimer
+    const distCm = (effDistM * 100).toFixed(0);
+    const distIn = (effDistM * 39.3701).toFixed(1);
+    ctx2d.fillStyle = 'rgba(226, 232, 240, 0.82)';
+    ctx2d.font = '600 12px -apple-system, sans-serif';
+    ctx2d.textAlign = 'center';
+    ctx2d.textBaseline = 'top';
+    const eyeInstruct = state.eyeMode === 'OD'
+      ? 'Cover LEFT eye • Test RIGHT (OD)'
+      : (state.eyeMode === 'OS' ? 'Cover RIGHT eye • Test LEFT (OS)' : 'Cover one eye (select OD or OS)');
+    ctx2d.fillText(
+      `2D Tangent Perimeter (${pat.shortName})  •  ${eyeInstruct}  •  Position eye ${distCm} cm (${distIn} in) from center diamond`,
+      cx,
+      14
+    );
+
+    ctx2d.fillStyle = 'rgba(253, 230, 138, 0.78)';
+    ctx2d.font = '500 11px -apple-system, sans-serif';
+    ctx2d.textBaseline = 'bottom';
+    ctx2d.fillText(
+      'Non-diagnostic educational screener (~14 dB display dynamic-range floor) — NOT a certified clinical perimeter.',
+      cx,
+      cssH - 12
+    );
+  }
+
   function render2DChart() {
     if (state.viewMode !== '2d') return;
     const dpr = window.devicePixelRatio || 1;
@@ -3012,12 +4579,18 @@ if (typeof window !== 'undefined') {
     ctx2d.save();
     ctx2d.scale(dpr, dpr);
 
+    const mToCssPx = 1000 * state.pxPerMm;
+    if (state.appMode === 'vf') {
+      render2DVisualField(cssW, cssH, mToCssPx);
+      ctx2d.restore();
+      return;
+    }
+
     // Light clinical background (or dark OST surround in reverse-polarity mode)
     ctx2d.fillStyle = state.invertPolarity ? '#090d16' : '#e2e8f0';
     ctx2d.fillRect(0, 0, cssW, cssH);
 
     const layout = currentLayout;
-    const mToCssPx = 1000 * state.pxPerMm;
 
     const boardPxW = Math.min(cssW - 28, Math.max(320, layout.boardWidth * mToCssPx));
     const boardPxH = Math.max(layout.boardHeight * mToCssPx, 220);
@@ -3141,6 +4714,132 @@ if (typeof window !== 'undefined') {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
+  function drawGoldmannDisc(vpMatrix, domeBaseMatrix, xDeg, yDeg, domeRadius, diamMeters, r, g, b, a = 1.0) {
+    const sp = SnellenCore.vfSphericalPointMeters(domeRadius * 0.994, xDeg, yDeg);
+    const localM = M4.orientDiscOnDome(sp.pos, sp.normal, diamMeters);
+    const worldM = M4.multiply(domeBaseMatrix, localM);
+    gl.useProgram(colorProg);
+    gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vpMatrix, worldM));
+    gl.uniform4f(uColorVal, r, g, b, a);
+    gl.bindVertexArray(vfDiscVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, vfDiscVertCount);
+  }
+
+  function render3DVisualFieldBowl(vp, isAR) {
+    const isAdditiveOST = !!(state.xrSession && state.xrSession.environmentBlendMode === 'additive');
+    const headLockedXR = !!(state.xrSession && state.vfHeadLock && state.vfHeadRotMatrix);
+    const domeRadius = headLockedXR
+      ? state.targetDistance
+      : (state.lockAngularSize ? state.liveEyeDistance : state.targetDistance);
+
+    // Center concave hemisphere at tested eye optical center when Head-Locked in VR (zero chinrest / zero parallax!),
+    // or anchor bowl apex at chartAnchorPos when world-locked / in desktop 3D preview.
+    let domeBase;
+    if (headLockedXR) {
+      domeBase = M4.multiply(
+        M4.translation(state.eyePos[0], state.eyePos[1], state.eyePos[2]),
+        state.vfHeadRotMatrix
+      );
+    } else {
+      const sinY = Math.sin(state.chartAnchorYaw);
+      const cosY = Math.cos(state.chartAnchorYaw);
+      const centerPos = [
+        state.chartAnchorPos[0] + sinY * domeRadius,
+        state.chartAnchorPos[1],
+        state.chartAnchorPos[2] + cosY * domeRadius
+      ];
+      domeBase = M4.trsYPR(centerPos, state.chartAnchorYaw, 0);
+    }
+
+    const domeScaleM = M4.multiply(domeBase, M4.scaling(domeRadius, domeRadius, domeRadius));
+    const lumRef = SnellenCore.vfDecibelToLuminance(30);
+    const vfRunning = !!(state.vf && state.vf.status === 'active');
+
+    // 1. Calibrated 10 cd/m^2 photopic perimeter hemisphere shell (skipped on additive OST Dark waveguides)
+    if (!(isAdditiveOST && state.invertPolarity)) {
+      gl.useProgram(colorProg);
+      gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, domeScaleM));
+      if (state.invertPolarity) {
+        gl.uniform4f(uColorVal, 0.03, 0.04, 0.06, isAR ? 0.80 : 1.0);
+      } else {
+        const b = lumRef.bgSrgb;
+        gl.uniform4f(uColorVal, b, b, b, isAR ? 0.84 : 1.0);
+      }
+      gl.bindVertexArray(vfDomeVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, vfDomeVertCount);
+    }
+
+    // 2. Subtle iso-eccentricity rings (10, 20, 30, 40 deg) & meridians
+    gl.useProgram(colorProg);
+    gl.uniformMatrix4fv(uColorMVP, false, M4.multiply(vp, domeScaleM));
+    if (vfRunning) {
+      gl.uniform4f(uColorVal, 0.34, 0.36, 0.40, 0.22);
+    } else {
+      gl.uniform4f(uColorVal, 0.40, 0.45, 0.54, 0.48);
+    }
+    gl.bindVertexArray(vfDomeGridVAO);
+    gl.drawArrays(gl.LINES, 0, vfDomeGridVertCount);
+
+    // 3. Central Foveal Fixation Diamond at (0 deg, 0 deg)
+    const nowClk = lastVfClockMs > 0 ? lastVfClockMs : getNowMs();
+    const clickAck = nowClk < state.vfClickAckUntilMs;
+    const fixSize = 2.0 * domeRadius * Math.tan(0.48 * SnellenCore.DEG_TO_RAD);
+    const fixModel = M4.multiply(
+      domeBase,
+      M4.multiply(
+        M4.translation(0, 0, -domeRadius * 0.995),
+        M4.multiply(M4.rotationZ(Math.PI * 0.25), M4.scaling(fixSize, fixSize, 1))
+      )
+    );
+    if (clickAck) {
+      drawSolidQuad(vp, fixModel, 0.20, 0.83, 0.60, 1.0);
+    } else {
+      drawSolidQuad(vp, fixModel, 0.98, 0.75, 0.14, 1.0);
+    }
+    const fixDotModel = M4.multiply(
+      domeBase,
+      M4.multiply(
+        M4.translation(0, 0, -domeRadius * 0.993),
+        M4.scaling(fixSize * 0.28, fixSize * 0.28, 1)
+      )
+    );
+    drawSolidQuad(vp, fixDotModel, 0.05, 0.06, 0.09, 1.0);
+
+    // 4. Active Goldmann Size III / V Stimulus Flash (200 ms clinical pulse)
+    if (vfRunning && state.vfPhase === 'flash' && state.vf.activeStimulus && !state.vf.activeStimulus.isBlank) {
+      const stim = state.vf.activeStimulus;
+      const diam = SnellenCore.vfStimulusDiameterMeters(domeRadius, state.vfGoldmannSize);
+      const lum = SnellenCore.vfDecibelToLuminance(stim.db);
+      drawGoldmannDisc(vp, domeBase, stim.xDeg, stim.yDeg, domeRadius, diam, lum.stimSrgb, lum.stimSrgb, lum.stimSrgb, 1.0);
+    }
+
+    // 5. Idle 15 deg Temporal Physiological Blind-Spot Finder Demo
+    if (!vfRunning && state.vfBlindSpotDemo) {
+      const pulseOn = (Math.floor(getNowMs() / 500) % 2) === 0;
+      if (pulseOn) {
+        const bsXDeg = state.eyeMode === 'OS' ? -15 : 15;
+        const diam = SnellenCore.vfStimulusDiameterMeters(domeRadius, state.vfGoldmannSize) * 1.35;
+        drawGoldmannDisc(vp, domeBase, bsXDeg, -1.5, domeRadius, diam, 1.0, 1.0, 1.0, 1.0);
+      }
+    }
+
+    // 6. Completed 3D Sensitivity Map Projected Directly onto Perimeter Hemisphere
+    if (!vfRunning && state.vf && state.vf.status === 'complete') {
+      const markerDiam = 2.0 * domeRadius * Math.tan(0.55 * SnellenCore.DEG_TO_RAD);
+      for (const p of state.vf.points) {
+        if (p.isBlindSpotLocus) {
+          drawGoldmannDisc(vp, domeBase, p.xDeg, p.yDeg, domeRadius, markerDiam * 0.85, 0.35, 0.44, 0.58, 0.92);
+        } else if (p.defectClass === 'normal') {
+          drawGoldmannDisc(vp, domeBase, p.xDeg, p.yDeg, domeRadius, markerDiam, 0.06, 0.73, 0.51, 0.95);
+        } else if (p.defectClass === 'relative') {
+          drawGoldmannDisc(vp, domeBase, p.xDeg, p.yDeg, domeRadius, markerDiam * 1.15, 0.96, 0.62, 0.04, 0.98);
+        } else {
+          drawGoldmannDisc(vp, domeBase, p.xDeg, p.yDeg, domeRadius, markerDiam * 1.25, 0.94, 0.27, 0.27, 0.98);
+        }
+      }
+    }
+  }
+
   function renderEyeView(projMatrix, viewMatrix, eyeTag, controllers, handJoints, isAR) {
     // Virtual Monocular Eye Occluder in VR/AR stereo
     const occluded =
@@ -3189,8 +4888,18 @@ if (typeof window !== 'undefined') {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     if (occluded && isAR) {
-      // AR Monocular Occluder: blank ONLY the Snellen chart in this eye while keeping passthrough + 3D Control Console & hands visible!
+      // AR Monocular Occluder: blank ONLY the chart/bowl in this eye while keeping passthrough + 3D Control Console & hands visible!
       drawOccluderBadge();
+    } else if (state.appMode === 'vf') {
+      // Visual Field Mode: dark surround + calibrated 10 cd/m^2 concave hemispherical perimeter bowl
+      if (!isAR) {
+        const floorModel = M4.multiply(
+          M4.translation(0, 0, -3),
+          M4.multiply(M4.rotationX(-Math.PI / 2), M4.scaling(12, 14, 1))
+        );
+        drawSolidQuad(vp, floorModel, 0.04, 0.05, 0.07, 1.0);
+      }
+      render3DVisualFieldBowl(vp, isAR);
     } else {
       // 1. Exam room floor & distance grid (skipped in AR passthrough)
       if (!isAR) {
@@ -3319,15 +5028,16 @@ if (typeof window !== 'undefined') {
       gl.disable(gl.POLYGON_OFFSET_FILL);
     }
 
-    // 3. Floating 3D VR Control Console
+    // 3. Floating 3D VR Control Console (lowered below -24 deg inferior field during active VF test)
+    const effPanel = getEffectivePanelPose();
     const panelBackModel = M4.multiply(
-      M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch),
+      M4.trsYPR(effPanel.pos, effPanel.yaw, effPanel.pitch),
       M4.multiply(M4.translation(0, 0, -0.003), M4.scaling(PANEL_WIDTH_M + 0.012, PANEL_HEIGHT_M + 0.012, 1))
     );
     drawSolidQuad(vp, panelBackModel, 0.07, 0.09, 0.14, 0.95);
 
     const panelFrontModel = M4.multiply(
-      M4.trsYPR(state.panelPos, state.chartAnchorYaw, state.panelPitch),
+      M4.trsYPR(effPanel.pos, effPanel.yaw, effPanel.pitch),
       M4.scaling(PANEL_WIDTH_M, PANEL_HEIGHT_M, 1)
     );
     drawTexturedQuad(vp, panelFrontModel, vrPanelLayer.tex, 1.0);
@@ -3358,7 +5068,7 @@ if (typeof window !== 'undefined') {
       if (ctrl.hit) {
         const dotScale = ctrl.showBeam === false ? 0.015 : 0.012;
         const dotModel = M4.multiply(
-          M4.trsYPR(ctrl.hit.worldHit, state.chartAnchorYaw, state.panelPitch),
+          M4.trsYPR(ctrl.hit.worldHit, effPanel.yaw, effPanel.pitch),
           M4.multiply(M4.translation(0, 0, 0.002), M4.scaling(dotScale, dotScale, 1))
         );
         drawSolidQuad(vp, dotModel, 0.25, 0.85, 1.0, 1.0);
@@ -3460,8 +5170,12 @@ if (typeof window !== 'undefined') {
   });
 
   window.addEventListener('mouseup', () => {
-    if (isDragging && !dragMoved && desktopHoveredBtn && state.viewMode === '3d' && !state.xrSession) {
-      desktopHoveredBtn.action();
+    if (isDragging && !dragMoved && state.viewMode === '3d' && !state.xrSession) {
+      if (desktopHoveredBtn) {
+        desktopHoveredBtn.action();
+      } else if (state.appMode === 'vf' && state.vf && state.vf.status === 'active') {
+        recordVfClick();
+      }
     }
     isDragging = false;
   });
@@ -3472,9 +5186,10 @@ if (typeof window !== 'undefined') {
     state.simDistOffset = Math.max(-state.targetDistance + 0.35, Math.min(4.0, state.simDistOffset + e.deltaY * 0.0012));
   }, { passive: false });
 
-  function renderDesktopFrame() {
+  function renderDesktopFrame(frameTimeMs) {
     if (state.xrSession) return;
     requestAnimationFrame(renderDesktopFrame);
+    tickVisualFieldRuntime(typeof frameTimeMs === 'number' ? frameTimeMs : getNowMs(), null);
     if (state.viewMode !== '3d' || !gl) return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -3583,7 +5298,9 @@ if (typeof window !== 'undefined') {
 
       session.addEventListener('select', e => {
         if (!xrRefSpace) return;
-        const rayPose = e.frame.getPose(e.inputSource.targetRaySpace, xrRefSpace);
+        const rayPose = e.inputSource.targetRaySpace
+          ? e.frame.getPose(e.inputSource.targetRaySpace, xrRefSpace)
+          : null;
         if (rayPose) {
           const m = rayPose.transform.matrix;
           const origin = [m[12], m[13], m[14]];
@@ -3593,6 +5310,13 @@ if (typeof window !== 'undefined') {
             hit.btn.action();
             return;
           }
+        }
+        // In Visual Field mode, pulling VR Trigger or Pinching anywhere away from console = "SEEN" clicker!
+        if (state.appMode === 'vf') {
+          if (state.vf && state.vf.status === 'active') {
+            recordVfClick();
+          }
+          return;
         }
         // Trigger/pinch away from UI panel = quick shuffle (when not inside a scored exam)
         if (!state.exam || state.exam.status !== 'active') {
@@ -3609,6 +5333,7 @@ if (typeof window !== 'undefined') {
         state.xrMode = null;
         state.hmdPPD = null;
         state.xrInputModalities = [];
+        state.vfHeadRotMatrix = null;
         state.gazeDwellBtnId = null;
         state.gazeDwellProgress = 0;
         xrRefSpace = null;
@@ -3635,13 +5360,15 @@ if (typeof window !== 'undefined') {
       const key = src.handedness || 'none';
       const prev = prevButtonStates.get(key) || [];
       const inActiveExam = !!(state.exam && state.exam.status === 'active');
+      const inActiveVf = !!(state.appMode === 'vf' && state.vf && state.vf.status === 'active');
 
-      // Button 4 (A/X) = Skip in Exam or Cycle Chart; Button 5 (B/Y) = Cycle Eye Occluder
+      // Button 4 (A/X) = SEEN in VF, Skip in Exam, or Cycle Chart; Button 5 (B/Y) = Cycle Eye Occluder
       const aPressed = gp.buttons[4] && gp.buttons[4].pressed;
       const bPressed = gp.buttons[5] && gp.buttons[5].pressed;
       if (aPressed && !prev[4]) {
-        if (inActiveExam) submitExamAnswer('SKIP');
-        else cycleChart();
+        if (inActiveVf) recordVfClick(nowMs);
+        else if (inActiveExam) submitExamAnswer('SKIP');
+        else if (state.appMode === 'acuity') cycleChart();
       }
       if (bPressed && !prev[5]) {
         const order = ['OU', 'OD', 'OS'];
@@ -3650,7 +5377,7 @@ if (typeof window !== 'undefined') {
       prevButtonStates.set(key, gp.buttons.map(b => b.pressed));
 
       // Thumbstick navigation (or directional answer input during Tumbling E / Landolt C exam!)
-      if (nowMs > stickCooldownUntil && gp.axes.length >= 4) {
+      if (state.appMode === 'acuity' && nowMs > stickCooldownUntil && gp.axes.length >= 4) {
         const axX = gp.axes[2];
         const axY = gp.axes[3];
         if (inActiveExam && (state.chartTypeId === 'tumbling_e' || (state.chartTypeId === 'landolt_c' && !state.landolt8))) {
@@ -3683,9 +5410,10 @@ if (typeof window !== 'undefined') {
     const pose = frame.getViewerPose(xrRefSpace);
     if (!pose) return;
 
+    state.vfHeadRotMatrix = M4.extractRotation(pose.transform.matrix);
     pollXRGamepads(session, time);
 
-    // Determine exact world position of active eye(s) for accurate Snellen angular subtense
+    // Determine exact world position of active eye(s) for accurate Snellen & Perimetry angular subtense
     let activeEyePos = [
       pose.transform.position.x,
       pose.transform.position.y,
@@ -3726,6 +5454,18 @@ if (typeof window !== 'undefined') {
     const handJoints = [];
     const modalitySet = new Set();
     let hoveredBtnId = null;
+    let detectedGazeAngleDeg = null;
+    const vfRunning = !!(state.appMode === 'vf' && state.vf && state.vf.status === 'active');
+
+    // Reference fixation direction vector from activeEyePos to central fixation diamond
+    let fixDir = [-pose.transform.matrix[8], -pose.transform.matrix[9], -pose.transform.matrix[10]];
+    if (!state.vfHeadLock) {
+      const fdx = state.chartAnchorPos[0] - activeEyePos[0];
+      const fdy = state.chartAnchorPos[1] - activeEyePos[1];
+      const fdz = state.chartAnchorPos[2] - activeEyePos[2];
+      const flen = Math.hypot(fdx, fdy, fdz) || 1;
+      fixDir = [fdx / flen, fdy / flen, fdz / flen];
+    }
 
     for (const src of session.inputSources) {
       if (src.hand) modalitySet.add('Hands');
@@ -3797,15 +5537,26 @@ if (typeof window !== 'undefined') {
       const m = rayPose.transform.matrix;
       const origin = [m[12], m[13], m[14]];
       const dir = [-m[8], -m[9], -m[10]];
+
+      // Measure foveal fixation angle deviation on eye-tracked headsets
+      if (src.targetRayMode === 'gaze') {
+        const dlen = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+        const cosAng = Math.max(-1, Math.min(1, (dir[0] * fixDir[0] + dir[1] * fixDir[1] + dir[2] * fixDir[2]) / dlen));
+        detectedGazeAngleDeg = Math.acos(cosAng) * SnellenCore.RAD_TO_DEG;
+      }
+
       const hit = intersectRayWithPanel(origin, dir);
       if (hit && hit.btn && !hoveredBtnId) hoveredBtnId = hit.btn.id;
       if (src.targetRayMode === 'tracked-pointer') {
-        controllers.push({ origin, dir, hit, showBeam: true });
+        // Hide distracting laser beam across peripheral bowl during active VF unless pointing at lowered console
+        controllers.push({ origin, dir, hit, showBeam: vfRunning ? !!hit : true });
       } else if (hit) {
         // For eye-tracked transient-pointer & gaze, show clean panel reticle dot without laser beam from face
         controllers.push({ origin, dir, hit, showBeam: false });
       }
     }
+
+    tickVisualFieldRuntime(time, detectedGazeAngleDeg);
 
     // 3. Head/Eye Gaze Fallback & Hands-Free 1.1s Dwell-to-Click
     if (state.gazeDwellEnabled && !hoveredBtnId) {
@@ -3887,18 +5638,36 @@ if (typeof window !== 'undefined') {
   // DOM Sidebar Wiring & Live Telemetry
   // ==========================================================================
   function refreshLiveMetricReadouts() {
-    const row = state.chartData.rows[Math.min(state.activeRowIdx, state.chartData.rows.length - 1)];
-    document.getElementById('valAcuity').textContent = `${row.label} (${row.metric})`;
-
     const effectiveDist = state.viewMode === '2d'
       ? state.targetDistance
       : (state.lockAngularSize ? state.liveEyeDistance : state.targetDistance);
-    const h2020mm = SnellenCore.optotypeHeightMeters(effectiveDist, 1.0) * 1000;
-    document.getElementById('val2020Height').textContent = `${h2020mm.toFixed(2)} mm`;
-
     const distM = state.viewMode === '2d' ? state.targetDistance : state.liveEyeDistance;
     document.getElementById('valLiveDist').textContent = `${distM.toFixed(2)} m (${(distM / 0.3048).toFixed(1)} ft)`;
 
+    if (state.appMode === 'vf') {
+      document.getElementById('lblMetric1').textContent = 'VF Grid Pattern';
+      const pShort = SnellenCore.VF_PATTERNS[state.vfPatternId].shortName;
+      document.getElementById('valAcuity').textContent = `${pShort} (${state.vfStrategy === 'threshold' ? '4–2 dB' : 'Screen'})`;
+
+      document.getElementById('lblMetric2').textContent = 'Goldmann Disc Ø';
+      const discMm = SnellenCore.vfStimulusDiameterMeters(effectiveDist, state.vfGoldmannSize) * 1000;
+      document.getElementById('val2020Height').textContent = `${discMm.toFixed(2)} mm`;
+
+      document.getElementById('lblMetric4').textContent = 'Stimulus Angle';
+      const gDeg = SnellenCore.GOLDMANN_SIZES_DEG[state.vfGoldmannSize];
+      document.getElementById('valSubtense').textContent = `${gDeg.toFixed(3)}° (Size ${state.vfGoldmannSize})`;
+      return;
+    }
+
+    document.getElementById('lblMetric1').textContent = 'Active Row Acuity';
+    const row = state.chartData.rows[Math.min(state.activeRowIdx, state.chartData.rows.length - 1)];
+    document.getElementById('valAcuity').textContent = `${row.label} (${row.metric})`;
+
+    document.getElementById('lblMetric2').textContent = '20/20 Physical Height';
+    const h2020mm = SnellenCore.optotypeHeightMeters(effectiveDist, 1.0) * 1000;
+    document.getElementById('val2020Height').textContent = `${h2020mm.toFixed(2)} mm`;
+
+    document.getElementById('lblMetric4').textContent = 'Angular Subtense';
     const actual2020H = SnellenCore.optotypeHeightMeters(state.targetDistance, 1.0) * state.appliedScale;
     const arcmin = state.viewMode === '2d'
       ? 5.0
@@ -3908,6 +5677,16 @@ if (typeof window !== 'undefined') {
   }
 
   function updateSidebarUI() {
+    const isVf = state.appMode === 'vf';
+    document.getElementById('btnModeAcuity').classList.toggle('active', !isVf);
+    document.getElementById('btnModeVF').classList.toggle('active', isVf);
+    document.getElementById('activeModeBadge').textContent = isVf ? 'Visual Field' : 'Acuity Chart';
+
+    document.getElementById('acuityChartSection').style.display = isVf ? 'none' : 'flex';
+    document.getElementById('examSection').style.display = isVf ? 'none' : 'flex';
+    document.getElementById('acuityAnswerSection').style.display = isVf ? 'none' : 'flex';
+    document.getElementById('vfSection').style.display = isVf ? 'flex' : 'none';
+
     document.getElementById('cycleCounter').textContent = `#${state.cycleCount}`;
     document.getElementById('selChartType').value = state.chartTypeId;
     document.getElementById('landoltDirsRow').style.display = state.chartTypeId === 'landolt_c' ? 'grid' : 'none';
@@ -3921,7 +5700,7 @@ if (typeof window !== 'undefined') {
       btn.classList.toggle('active', btn.dataset.eye === state.eyeMode);
     });
 
-    const presetDists = [6.096, 4.0, 3.0, 2.0, 1.5, 1.3, 0.9];
+    const presetDists = [6.096, 4.0, 3.0, 2.0, 1.5, 1.3, 0.9, 0.3];
     const matchedPreset = presetDists.find(d => Math.abs(state.targetDistance - d) < 0.005);
     const selDistEl = document.getElementById('selDistance');
     if (matchedPreset !== undefined) {
@@ -3959,6 +5738,72 @@ if (typeof window !== 'undefined') {
     }
 
     refreshLiveMetricReadouts();
+
+    // Visual Field Sidebar Controls & Scorecard
+    document.getElementById('selVfPattern').value = state.vfPatternId;
+    document.getElementById('selVfStrategy').value = state.vfStrategy;
+    document.getElementById('selVfSize').value = state.vfGoldmannSize;
+    document.getElementById('chkVfHeadLock').checked = state.vfHeadLock;
+    document.getElementById('chkVfBlindSpotDemo').checked = state.vfBlindSpotDemo;
+
+    const vfRunning = !!(state.vf && state.vf.status === 'active');
+    const btnStartVF = document.getElementById('btnStartVF');
+    const btnCancelVF = document.getElementById('btnCancelVF');
+    const btnVfClicker = document.getElementById('btnVfClicker');
+    const vfPhaseBadge = document.getElementById('vfPhaseBadge');
+    const vfLivePrompt = document.getElementById('vfLivePrompt');
+    const vfResultBanner = document.getElementById('vfResultBanner');
+
+    btnCancelVF.disabled = !vfRunning;
+    btnVfClicker.disabled = !vfRunning;
+
+    ['OD', 'OS', 'OU'].forEach(eyeKey => {
+      const el = document.getElementById(`vfScore${eyeKey}`);
+      el.textContent = state.vfScores[eyeKey] ? state.vfScores[eyeKey].summaryTag : '—';
+    });
+
+    if (state.vf) {
+      document.getElementById('valVfFL').textContent = `${state.vf.fixationLosses} / ${state.vf.bsCatchTotal}`;
+      const fpTotalNum = state.vf.falsePositives + state.vf.unsolicitedClicks;
+      document.getElementById('valVfFP').textContent = `${fpTotalNum} / ${state.vf.fpCatchTotal}`;
+      document.getElementById('valVfFN').textContent = `${state.vf.falseNegatives} / ${state.vf.fnCatchTotal}`;
+    } else {
+      document.getElementById('valVfFL').textContent = '0 / 0';
+      document.getElementById('valVfFP').textContent = '0 / 0';
+      document.getElementById('valVfFN').textContent = '0 / 0';
+    }
+    document.getElementById('valVfRange').textContent = state.vfLiveGazeDeg !== null
+      ? `Gaze ±${state.vfLiveGazeDeg.toFixed(1)}° • 14–34 dB`
+      : '14–34 dB (10 cd/m²)';
+
+    if (vfRunning) {
+      const donePts = state.vf.points.filter(p => p.done).length;
+      btnStartVF.textContent = '↻ Restart VF';
+      vfPhaseBadge.textContent = `${donePts}/${state.vf.points.length} pts`;
+      vfLivePrompt.textContent = state.vf.lastEventText;
+      vfResultBanner.style.display = 'none';
+    } else if (state.vf && state.vf.status === 'complete' && state.vf.result) {
+      const vr = state.vf.result;
+      const mdSign = vr.meanDeviation >= 0 ? '+' : '';
+      btnStartVF.textContent = '▶ New VF Test';
+      vfPhaseBadge.textContent = 'Scored';
+      vfLivePrompt.textContent = state.vf.lastEventText;
+      vfResultBanner.style.display = 'block';
+      vfResultBanner.innerHTML =
+        `<strong>${vr.eyeMode} Visual Field (${vr.patternName}): MD ${mdSign}${vr.meanDeviation.toFixed(2)} dB</strong> • PSD <strong>${vr.patternStdDev.toFixed(2)} dB</strong><br/>` +
+        `Normal: <strong>${vr.normalCount}/${vr.evaluatedPoints} (${vr.seenPct}%)</strong> • Relative: <strong>${vr.relativeCount}</strong> • Deep (&lt;14 dB): <strong>${vr.deepCount}</strong><br/>` +
+        `<span style="color:${vr.reliable ? '#a7f3d0' : '#fde68a'};">${vr.reliabilityStatus}</span><br/>` +
+        `<span style="color:#94a3b8; font-size:0.70rem;">Non-diagnostic estimate (~14 dB HMD contrast floor) — NOT a clinical diagnosis.</span>`;
+    } else {
+      btnStartVF.textContent = `▶ Start VF (${state.eyeMode})`;
+      vfPhaseBadge.textContent = state.vfBlindSpotDemo ? '15° BS Demo' : 'Idle';
+      vfLivePrompt.textContent = state.eyeMode === 'OU'
+        ? 'Tip: Select Right (OD) or Left (OS) eye so the opposite eye cannot mask scotomas or your physiological blind spot.'
+        : `Testing ${state.eyeMode}: Keep gaze locked on the central amber diamond and click whenever a peripheral light flashes.`;
+      vfResultBanner.style.display = 'none';
+    }
+
+    renderSidebarVfMap();
 
     // Scored Acuity Exam Sidebar Controls & Scorecard
     const btnStart = document.getElementById('btnStartExam');
@@ -4044,6 +5889,8 @@ if (typeof window !== 'undefined') {
   // Event Listeners
   document.getElementById('btnEnterVR').addEventListener('click', () => startXR('immersive-vr'));
   document.getElementById('btnEnterAR').addEventListener('click', () => startXR('immersive-ar'));
+  document.getElementById('btnModeAcuity').addEventListener('click', () => setAppMode('acuity'));
+  document.getElementById('btnModeVF').addEventListener('click', () => setAppMode('vf', { autoMonocular: true }));
 
   function setViewportMode(mode) {
     state.viewMode = mode;
@@ -4053,9 +5900,7 @@ if (typeof window !== 'undefined') {
     canvas2d.style.display = mode === '2d' ? 'block' : 'none';
     document.getElementById('btnCalib2D').style.display = mode === '2d' ? 'inline-block' : 'none';
     document.getElementById('btnEnvTheme').style.display = mode === '3d' ? 'inline-block' : 'none';
-    document.getElementById('viewportHintPill').innerHTML = mode === '3d'
-      ? 'Drag to look • Scroll to lean • Click 3D console or press <strong>Space</strong> to shuffle'
-      : '2D Calibrated Mode • Click <strong>Calibrate Screen</strong> to match physical monitor DPI';
+    refreshViewportHint();
     if (mode === '2d') render2DChart();
     refreshLiveMetricReadouts();
   }
@@ -4078,6 +5923,21 @@ if (typeof window !== 'undefined') {
   document.getElementById('btnRowUp').addEventListener('click', () => stepActiveRow(-1));
   document.getElementById('btnRowDown').addEventListener('click', () => stepActiveRow(1));
 
+  // Visual Field DOM Listeners
+  document.getElementById('selVfPattern').addEventListener('change', e => setVfPattern(e.target.value));
+  document.getElementById('selVfStrategy').addEventListener('change', e => setVfStrategy(e.target.value));
+  document.getElementById('selVfSize').addEventListener('change', e => setVfSize(e.target.value));
+  document.getElementById('chkVfHeadLock').addEventListener('change', e => setVfHeadLock(e.target.checked));
+  document.getElementById('chkVfBlindSpotDemo').addEventListener('change', e => setVfBlindSpotDemo(e.target.checked));
+  document.getElementById('btnStartVF').addEventListener('click', () => startVisualField());
+  document.getElementById('btnCancelVF').addEventListener('click', () => cancelVisualField());
+  document.getElementById('btnVfClicker').addEventListener('click', () => recordVfClick());
+  canvas2d.addEventListener('mousedown', () => {
+    if (state.viewMode === '2d' && state.appMode === 'vf' && state.vf && state.vf.status === 'active') {
+      recordVfClick();
+    }
+  });
+
   document.getElementById('selDistance').addEventListener('change', e => {
     if (e.target.value === 'custom') {
       document.getElementById('customDistRow').style.display = 'grid';
@@ -4089,7 +5949,7 @@ if (typeof window !== 'undefined') {
   const applyCustomDist = () => {
     const raw = parseFloat(document.getElementById('inpCustomDist').value);
     if (!Number.isNaN(raw)) {
-      const clamped = Math.max(0.4, Math.min(10.0, raw));
+      const clamped = Math.max(0.25, Math.min(10.0, raw));
       setTargetDistance(clamped);
     }
   };
@@ -4159,11 +6019,26 @@ if (typeof window !== 'undefined') {
     if (state.viewMode === '2d') render2DChart();
   });
 
-  // Keyboard shortcuts (works in 2D, 3D preview, PCVR, AND active Scored Exams!)
+  // Keyboard shortcuts (works in 2D, 3D preview, PCVR, Scored Acuity Exams, AND Visual Field Perimetry!)
   window.addEventListener('keydown', e => {
     if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
 
-    // When a Scored Exam is active, capture letter/digit/arrow/skip answers directly!
+    // 1. Active Visual Field Test: Space / Enter = "SEEN" clicker, Escape = Stop
+    if (state.appMode === 'vf' && state.vf && state.vf.status === 'active') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelVisualField();
+        return;
+      }
+      if (e.code === 'Space' || e.key === 'Enter') {
+        e.preventDefault();
+        recordVfClick();
+        return;
+      }
+      return;
+    }
+
+    // 2. Active Scored Acuity Exam: capture letter/digit/arrow/skip answers directly!
     if (state.exam && state.exam.status === 'active') {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -4194,22 +6069,25 @@ if (typeof window !== 'undefined') {
     }
 
     const k = e.key.toLowerCase();
-    if (e.code === 'Space' || k === 'r') {
+    if (k === 'v') {
+      e.preventDefault();
+      setAppMode(state.appMode === 'vf' ? 'acuity' : 'vf', { autoMonocular: true });
+    } else if ((e.code === 'Space' || k === 'r') && state.appMode === 'acuity') {
       e.preventDefault();
       cycleChart(false);
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === 'ArrowUp' && state.appMode === 'acuity') {
       e.preventDefault();
       stepActiveRow(-1);
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === 'ArrowDown' && state.appMode === 'acuity') {
       e.preventDefault();
       stepActiveRow(1);
-    } else if (k >= '1' && k <= '6') {
+    } else if (k >= '1' && k <= '6' && state.appMode === 'acuity') {
       const ids = ['snellen', 'etdrs', 'tumbling_e', 'landolt_c', 'hotv', 'numbers'];
       setChartType(ids[parseInt(k, 10) - 1]);
     } else if (k === 'e') {
       const order = ['OU', 'OD', 'OS'];
       setEyeMode(order[(order.indexOf(state.eyeMode) + 1) % order.length]);
-    } else if (k === 'm') {
+    } else if (k === 'm' && state.appMode === 'acuity') {
       const modes = ['full', 'line', 'single'];
       setLayoutMode(modes[(modes.indexOf(state.layoutMode) + 1) % modes.length]);
     } else if (k === 'l') {
@@ -4238,6 +6116,16 @@ if (typeof window !== 'undefined') {
     setGazeDwell,
     setEyeMode,
     setViewportMode,
+    setAppMode,
+    setVfPattern,
+    setVfStrategy,
+    setVfSize,
+    setVfHeadLock,
+    setVfBlindSpotDemo,
+    startVisualField,
+    cancelVisualField,
+    recordVfClick,
+    tickVisualFieldRuntime,
     startXR,
     startExam,
     submitExamAnswer,

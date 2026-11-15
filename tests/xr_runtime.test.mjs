@@ -694,4 +694,132 @@ assert.equal(app.state.hqSmoothing, true);
 assert.ok(Math.abs(mockXRSession.renderState.baseLayer.opts.framebufferScaleFactor - 1.35 * 1.35) < 1e-6);
 
 mockXRSession.end();
-console.log('  ✓ XR-to-2D Microphone Permission Handoff & Optional HQ Chart Smoothing toggle verified\n');
+console.log('  ✓ XR-to-2D Microphone Permission Handoff & Optional HQ Chart Smoothing toggle verified');
+
+// 7. Visual Field (Static Automated Perimetry) Mode: WebXR 3D Bowl, Monocular Occlusion, Eye-Gaze Fixation, Voice & 2D Screen
+app.setEyeMode('OU');
+app.setAppMode('vf', { autoMonocular: true });
+assert.equal(app.state.appMode, 'vf', 'App mode should switch to Visual Field');
+assert.equal(app.state.eyeMode, 'OD', 'Entering VF with autoMonocular must switch OU -> OD monocular occlusion');
+assert.equal(elements.get('vfSection').style.display, 'flex', 'VF sidebar section must be visible');
+assert.equal(elements.get('acuityChartSection').style.display, 'none', 'Acuity chart section must hide in VF mode');
+
+// Enter VR in Visual Field Mode (10-2 Macular Grid, Suprathreshold)
+app.setVfPattern('10-2');
+app.setVfStrategy('suprathreshold');
+app.setVfSize('III');
+app.setVfHeadLock(true);
+xrSessionListeners['select'] = [];
+xrSessionListeners['end'] = [];
+mockXRSession.inputSources = [];
+await app.startXR('immersive-vr');
+assert.ok(app.state.xrSession, 'Should enter VR in Visual Field mode');
+
+// Start deterministic VF session at virtual t = 10000 ms
+let vfSeed = 9001;
+const vfRng = () => { vfSeed = (vfSeed * 1664525 + 1013904223) >>> 0; return vfSeed / 4294967296; };
+app.startVisualField({ nowMs: 10000, rng: vfRng });
+assert.equal(app.state.vf.status, 'active');
+assert.equal(app.state.vfPhase, 'isi');
+
+// Advance XR frame to t = 10700 ms -> transitions ISI -> 200ms Goldmann Flash!
+// Include an off-axis WebXR 'gaze' ray (12 deg right of fixation) to verify eye-tracking fixation monitor!
+const offAxisRad = 12 * (Math.PI / 180);
+const offAxisGazeMat = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  -Math.sin(offAxisRad), 0, -Math.cos(offAxisRad), 0,
+  0.032, 1.65, 0, 1
+]);
+mockXRSession.inputSources = [{
+  handedness: 'none',
+  targetRayMode: 'gaze',
+  targetRaySpace: {}
+}];
+mockGL.log.length = 0;
+activeXRFrameCallback(10700, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => ({ transform: { matrix: offAxisGazeMat } })
+});
+assert.equal(app.state.vfPhase, 'flash', 'VF runtime must enter 200ms flash phase after ISI');
+assert.equal(app.state.vf.gazeFixationWarnings, 1, 'Off-axis WebXR eye gaze (>3.5°) during flash must log fixation warning');
+
+// Verify WebGL2 drew the 3D concave perimeter hemisphere (4608 verts) + circular Goldmann stimulus disc (108 verts) ONLY for open OD eye!
+const domeDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] === 4608);
+assert.equal(domeDraws.length, 1, 'Monocular OD mode must render 3D perimeter hemisphere once (OS occluded)');
+const discDraws = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] === 108);
+assert.equal(discDraws.length, 1, 'Active 200ms flash must project 36-segment Goldmann stimulus disc onto 3D bowl');
+
+// Respond via WebXR 'select' trigger pull away from lowered console -> records SEEN!
+const awayRayMat = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, -1, 0,
+  0.15, 1.5, 0, 1
+]);
+for (const fn of xrSessionListeners['select']) {
+  fn({
+    inputSource: { targetRaySpace: {}, targetRayMode: 'tracked-pointer' },
+    frame: { getPose: () => ({ transform: { matrix: awayRayMat } }) }
+  });
+}
+assert.equal(app.state.vf.activeStimulus.responded, true, 'Pulling VR trigger away from console must record SEEN click');
+
+// Step through remaining trials in XR frames (testing Voice "Seen" on trial 2 and normal completion)
+mockXRSession.inputSources = [];
+let simTime = 10950;
+let usedVoiceOnce = false;
+while (app.state.vf && app.state.vf.status === 'active' && simTime < 250000) {
+  simTime += 250;
+  activeXRFrameCallback(simTime, {
+    session: mockXRSession,
+    getViewerPose: () => makePose(0),
+    getPose: () => null
+  });
+  const stim = app.state.vf.activeStimulus;
+  if ((app.state.vfPhase === 'flash' || app.state.vfPhase === 'window') && stim && !stim.responded) {
+    if (stim.kind !== 'false_positive' && stim.kind !== 'blind_spot') {
+      if (!usedVoiceOnce && lastSpeechInstance) {
+        lastSpeechInstance.emitFinal('Seen');
+        usedVoiceOnce = true;
+      } else {
+        app.recordVfClick(simTime);
+      }
+    }
+  }
+}
+assert.equal(app.state.vf.status, 'complete', 'VF session must reach complete state across XR frame loop');
+assert.equal(app.state.vf.result.seenPct, 100, 'Healthy simulated responses on 10-2 must score 100% normal');
+assert.ok(elements.get('vfScoreOD').textContent.includes('100%'), 'OD VF scorecard pill must display completed summary');
+assert.ok(
+  elements.get('vfResultBanner').innerHTML.includes('Non-diagnostic estimate'),
+  'Completed VF result banner must prominently display non-diagnostic disclaimer'
+);
+
+// Render one post-completion XR frame to verify 3D sensitivity markers are drawn on the hemisphere
+mockGL.log.length = 0;
+activeXRFrameCallback(simTime + 250, {
+  session: mockXRSession,
+  getViewerPose: () => makePose(0),
+  getPose: () => null
+});
+const postMapDiscs = mockGL.log.filter(e => e[0] === 'drawArrays' && e[1] === mockGL.TRIANGLES && e[3] === 108);
+assert.equal(postMapDiscs.length, 24, 'Completed 10-2 VF session must project all 24 sensitivity markers onto 3D hemisphere');
+mockXRSession.end();
+
+// Verify 2D Calibrated Perimetry Screen Mode & 15° Blind-Spot Demo + Keyboard 'V' toggle back to Acuity
+app.setViewportMode('2d');
+app.setVfBlindSpotDemo(true);
+assert.equal(app.state.vfBlindSpotDemo, true);
+app.startVisualField({ nowMs: 300000, rng: vfRng });
+app.tickVisualFieldRuntime(300700, null);
+assert.equal(app.state.vfPhase, 'flash');
+elements.get('canvas2d').dispatch('mousedown');
+assert.equal(app.state.vf.activeStimulus.responded, true, 'Clicking 2D perimetry canvas during flash must record SEEN');
+app.cancelVisualField();
+for (const fn of (winListeners['keydown'] || [])) {
+  fn({ key: 'v', code: 'KeyV', preventDefault: () => {}, target: { tagName: 'BODY' } });
+}
+assert.equal(app.state.appMode, 'acuity', 'Pressing V outside active test must toggle back to Visual Acuity mode');
+console.log('  ✓ Visual Field (Perimetry) WebXR 3D Bowl, Eye-Gaze Fixation, Voice, 2D Tangent Screen & Disclaimers verified\n');
